@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import Navbar from "@/components/layout/Navbar";
 import StepTracker from "@/components/analysis/StepTracker";
 import NeonButton from "@/components/ui/NeonButton";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const STEPS_SEQUENCE = [
   { id: "upload", label: "Dataset Ingest", detail: "Loaded titanic.csv · 891 rows", duration: 0.3 },
@@ -19,37 +19,54 @@ const STEPS_SEQUENCE = [
 
 type StepStatus = "pending" | "running" | "done" | "error";
 
-export default function AnalysisPage({ params }: { params: Promise<{ id: string }> | any }) {
+export default function StepDetailPage({ params }: { params: Promise<{ id: string; stepId: string }> | any }) {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(-1);
-  const [done, setDone] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [activeModalId, setActiveModalId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  
   const [sessionId, setSessionId] = useState<string>("");
+  const [stepId, setStepId] = useState<string>("");
+  const [elapsed, setElapsed] = useState(0);
+  const [done, setDone] = useState(false);
+  const [currentStep, setCurrentStep] = useState(-1);
 
+  // Safely unwrap parameters
   useEffect(() => {
     if (params instanceof Promise) {
-      params.then((p) => setSessionId(p.id));
-    } else if (params && typeof params === "object" && params.id) {
-      setSessionId(params.id);
-    } else {
-      setSessionId("demo");
+      params.then((p) => {
+        setSessionId(p.id);
+        setStepId(p.stepId);
+      });
+    } else if (params && typeof params === "object") {
+      setSessionId(params.id || "demo");
+      setStepId(params.stepId || "upload");
     }
   }, [params]);
 
-  const steps = STEPS_SEQUENCE.map((s, i) => ({
-    ...s,
-    status: (i < currentStep ? "done" : i === currentStep ? "running" : "pending") as StepStatus,
-  }));
+  // Set initial elapsed time from query param, or fallback based on current step index
+  useEffect(() => {
+    const elapsedQuery = searchParams.get("elapsed");
+    if (elapsedQuery) {
+      setElapsed(parseFloat(elapsedQuery));
+    } else {
+      const idx = STEPS_SEQUENCE.findIndex(s => s.id === stepId);
+      setElapsed(idx >= 0 ? idx * 1.5 + 1.0 : 0);
+    }
+  }, [stepId, searchParams]);
 
-  // Auto-run timer (never pauses now)
+  // Sync currentStep progression based on elapsed time
+  useEffect(() => {
+    const idx = STEPS_SEQUENCE.findIndex(s => s.id === stepId);
+    setCurrentStep(idx >= 0 ? idx : 0);
+  }, [stepId]);
+
+  // Background timer (keeps running during inspect!)
   useEffect(() => {
     if (done) return;
     const timer = setInterval(() => setElapsed((e) => e + 0.1), 100);
     return () => clearInterval(timer);
   }, [done]);
 
-  // Auto-advance pipeline steps (never pauses now)
+  // Background step progress advancer (keeps running!)
   useEffect(() => {
     if (currentStep >= STEPS_SEQUENCE.length) {
       setDone(true);
@@ -63,112 +80,17 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
     return () => clearTimeout(timer);
   }, [currentStep]);
 
-  useEffect(() => {
-    const startDelay = setTimeout(() => setCurrentStep(0), 600);
-    return () => clearTimeout(startDelay);
-  }, []);
+  const steps = STEPS_SEQUENCE.map((s, i) => ({
+    ...s,
+    status: (i < currentStep ? "done" : i === currentStep ? "running" : "pending") as StepStatus,
+  }));
 
   const progress = done ? 100 : Math.min(((currentStep + 1) / STEPS_SEQUENCE.length) * 100, 99);
 
-  return (
-    <main style={{ background: "var(--bg-void)", minHeight: "100vh" }} className="cyber-grid-sm">
-      <Navbar />
-      <div style={{ paddingTop: 100, maxWidth: 1200, margin: "0 auto", padding: "100px 24px 80px" }}>
-        
-        {/* Top Header */}
-        <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-              <p className="section-eyebrow" style={{ color: "var(--cyan)", marginBottom: 0 }}>// PIPELINE STATUS</p>
-              <span style={{ fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--text-dim)" }}>· session: {sessionId}</span>
-            </div>
-            <h1 style={{ fontFamily: "Orbitron, sans-serif", fontWeight: 700, fontSize: "clamp(1.5rem,3vw,2.2rem)", color: "var(--text-bright)", marginBottom: 6 }}>
-              {done ? "Analysis Complete" : "Pipeline Processing"}
-            </h1>
-            <p style={{ fontFamily: "Fira Code, monospace", fontSize: 12, color: "var(--text-muted)" }}>
-              Elapsed Time: {elapsed.toFixed(1)}s
-            </p>
-          </div>
+  const handleStepSelect = (newStepId: string) => {
+    router.push(`/analysis/${sessionId}/${newStepId}?elapsed=${elapsed.toFixed(1)}`);
+  };
 
-          {done && (
-            <NeonButton href={`/results/${sessionId}`} variant="solid-cyan" size="lg">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={18} height={18}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0 0 20.25 18V6A2.25 2.25 0 0 0 18 3.75H6A2.25 2.25 0 0 0 3.75 6v12A2.25 2.25 0 0 0 6 20.25Z" />
-              </svg>
-              View Finished Results
-            </NeonButton>
-          )}
-        </div>
-
-        {/* Progress bar */}
-        <div style={{ height: 4, background: "var(--bg-panel)", marginBottom: 32, border: "1px solid var(--border-faint)" }}>
-          <div className="progress-bar-fill" style={{ width: `${progress}%`, transition: "width 0.3s ease" }} />
-        </div>
-
-        {/* Layout split: Steps Left, In-Place Dynamic Info Panel Right */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, alignItems: "start" }}>
-          <div>
-            <StepTracker 
-              steps={steps} 
-              selectedStepId={activeModalId || undefined}
-              onStepSelect={(id) => setActiveModalId(id)}
-            />
-          </div>
-
-          {/* Quick-Info Side Panel */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {/* Quick stats */}
-            <div style={{ border: "1px solid var(--border-faint)", background: "var(--bg-card)", padding: "20px" }}>
-              <h4 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: 13, color: "var(--cyan)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
-                // File Information
-              </h4>
-              {[
-                { label: "Filename", value: "titanic.csv" },
-                { label: "Total Rows", value: "891" },
-                { label: "Features", value: "12" },
-                { label: "Target column", value: "Survived" },
-              ].map((row) => (
-                <div key={row.label} style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, marginBottom: 8, borderBottom: "1px solid var(--border-faint)" }}>
-                  <span style={{ fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--text-muted)" }}>{row.label}</span>
-                  <span style={{ fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--text-primary)" }}>{row.value}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Quick guide */}
-            <div style={{ border: "1px solid var(--border-dim)", background: "rgba(0, 245, 255, 0.02)", padding: "20px" }}>
-              <h4 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: 13, color: "var(--text-bright)", letterSpacing: "0.05em", marginBottom: 8 }}>
-                💡 Click Any Step to Inspect
-              </h4>
-              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-                The pipeline runs automatically in the background. Click on any completed or active step to open the deep-dive window containing comprehensive schemas, code, and model training logs.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* STUNNING CYBERPUNK INSPECT MODAL OVERLAY */}
-      {activeModalId && (
-        <InspectModal 
-          stepId={activeModalId} 
-          onClose={() => setActiveModalId(null)} 
-        />
-      )}
-    </main>
-  );
-}
-
-/* ======================================================
-   DEEP DIVE INSPECT MODAL COMPONENT
-   ====================================================== */
-interface InspectModalProps {
-  stepId: string;
-  onClose: () => void;
-}
-
-function InspectModal({ stepId, onClose }: InspectModalProps) {
-  // Modal colors based on step types
   const themeColors: Record<string, string> = {
     upload: "var(--cyan)",
     analyze: "var(--amber)",
@@ -183,85 +105,92 @@ function InspectModal({ stepId, onClose }: InspectModalProps) {
   const accentColor = themeColors[stepId] || "var(--cyan)";
 
   return (
-    <div style={{
-      position: "fixed",
-      top: 0, left: 0, right: 0, bottom: 0,
-      background: "rgba(2, 2, 10, 0.85)",
-      backdropFilter: "blur(8px)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      zIndex: 9999,
-      padding: 24,
-    }}>
-      <div className="cyber-card" style={{
-        width: "100%",
-        maxWidth: 900,
-        maxHeight: "85vh",
-        background: "var(--bg-card)",
-        border: `1px solid ${accentColor}`,
-        display: "flex",
-        flexDirection: "column",
-        position: "relative",
-        boxShadow: `0 0 50px ${accentColor}15`,
-        padding: 0,
-      }}>
-        {/* Dynamic theme corner brackets */}
-        <div style={{ position: "absolute", top: -1, left: -1, width: 24, height: 24, borderTop: `2px solid ${accentColor}`, borderLeft: `2px solid ${accentColor}` }} />
-        <div style={{ position: "absolute", bottom: -1, right: -1, width: 24, height: 24, borderBottom: `2px solid ${accentColor}`, borderRight: `2px solid ${accentColor}` }} />
-
-        {/* Modal Header */}
-        <div style={{
-          padding: "20px 24px",
-          borderBottom: "1px solid var(--border-faint)",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          background: "rgba(255,255,255,0.01)",
-        }}>
+    <main style={{ background: "var(--bg-void)", minHeight: "100vh" }} className="cyber-grid-sm">
+      <Navbar />
+      <div style={{ paddingTop: 100, maxWidth: 1300, margin: "0 auto", padding: "100px 24px 80px" }}>
+        
+        {/* Header with Return link */}
+        <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>
-            <p style={{ fontFamily: "Fira Code, monospace", fontSize: 10, color: accentColor, letterSpacing: "0.15em", textTransform: "uppercase", margin: 0 }}>
-              // DEEP DIVE INSPECTOR
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <span 
+                onClick={() => router.push(`/analysis/${sessionId}`)}
+                style={{ cursor: "pointer", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", textDecoration: "underline" }}
+              >
+                &lt;- Back to Pipeline
+              </span>
+              <span style={{ fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--text-dim)" }}>· session: {sessionId}</span>
+            </div>
+            <h1 style={{ fontFamily: "Orbitron, sans-serif", fontWeight: 700, fontSize: "clamp(1.5rem,3vw,2.2rem)", color: "var(--text-bright)", marginBottom: 6 }}>
+              Step Details: {STEPS_SEQUENCE.find(s => s.id === stepId)?.label}
+            </h1>
+            <p style={{ fontFamily: "Fira Code, monospace", fontSize: 12, color: "var(--text-muted)" }}>
+              Running in background · Elapsed: {elapsed.toFixed(1)}s
             </p>
-            <h2 style={{ fontFamily: "Orbitron, sans-serif", fontWeight: 700, fontSize: 20, color: "var(--text-bright)", marginTop: 4, marginBottom: 0 }}>
-              {STEPS_SEQUENCE.find(s => s.id === stepId)?.label}
-            </h2>
           </div>
-          
-          {/* Close button */}
-          <button 
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: `1px solid ${accentColor}50`,
-              color: accentColor,
-              padding: "6px 14px",
-              fontFamily: "Fira Code, monospace",
-              fontSize: 11,
-              cursor: "pointer",
-              transition: "all 0.2s",
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = accentColor;
-              e.currentTarget.style.color = "#000000";
-              e.currentTarget.style.boxShadow = `0 0 15px ${accentColor}`;
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = "none";
-              e.currentTarget.style.color = accentColor;
-              e.currentTarget.style.boxShadow = "none";
-            }}
-          >
-            [CLOSE WINDOW]
-          </button>
+
+          <div style={{ display: "flex", gap: 12 }}>
+            <NeonButton onClick={() => router.push(`/analysis/${sessionId}`)} variant="cyan" size="sm">
+              Overview Dashboard
+            </NeonButton>
+            {done && (
+              <NeonButton href={`/results/${sessionId}`} variant="solid-cyan" size="sm">
+                View Finished Results
+              </NeonButton>
+            )}
+          </div>
         </div>
 
-        {/* Modal Content - Scrollable */}
-        <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
-          <ModalContentSelector stepId={stepId} accentColor={accentColor} />
+        {/* Progress bar */}
+        <div style={{ height: 4, background: "var(--bg-panel)", marginBottom: 32, border: "1px solid var(--border-faint)" }}>
+          <div className="progress-bar-fill" style={{ width: `${progress}%`, transition: "width 0.3s ease" }} />
+        </div>
+
+        {/* Spacious Dashboard Grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 32, alignItems: "start" }}>
+          
+          {/* LEFT COLUMN: Pipeline Tracker */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div style={{ border: "1px dashed rgba(0, 245, 255, 0.2)", background: "rgba(0, 245, 255, 0.01)", padding: "12px 16px" }}>
+              <p style={{ fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", margin: 0 }}>
+                // INSPECT MODE: Click any step to switch details pages.
+              </p>
+            </div>
+            <StepTracker 
+              steps={steps} 
+              selectedStepId={stepId}
+              onStepSelect={handleStepSelect}
+            />
+          </div>
+
+          {/* RIGHT COLUMN: Spacious Step-Specific Full Dashboard Component */}
+          <div className="cyber-card" style={{
+            background: "var(--bg-card)",
+            border: `1px solid ${accentColor}`,
+            padding: "28px",
+            position: "relative",
+            boxShadow: `0 0 30px ${accentColor}08`
+          }}>
+            {/* Brackets */}
+            <div style={{ position: "absolute", top: -1, left: -1, width: 16, height: 16, borderTop: `2px solid ${accentColor}`, borderLeft: `2px solid ${accentColor}` }} />
+            <div style={{ position: "absolute", bottom: -1, right: -1, width: 16, height: 16, borderBottom: `2px solid ${accentColor}`, borderRight: `2px solid ${accentColor}` }} />
+
+            <div style={{ marginBottom: 20 }}>
+              <p style={{ fontFamily: "Fira Code, monospace", fontSize: 10, color: accentColor, letterSpacing: "0.15em", textTransform: "uppercase", margin: 0 }}>
+                // PROCESS DOCUMENTATION
+              </p>
+              <h2 style={{ fontFamily: "Orbitron, sans-serif", fontWeight: 700, fontSize: 22, color: "var(--text-bright)", marginTop: 4, marginBottom: 8 }}>
+                {STEPS_SEQUENCE.find(s => s.id === stepId)?.label} Data Scope
+              </h2>
+              <div style={{ height: 1, background: "var(--border-faint)", width: "100%", marginTop: 12 }} />
+            </div>
+
+            <ModalContentSelector stepId={stepId} accentColor={accentColor} />
+          </div>
+
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -506,7 +435,6 @@ function LiveTrainingSimulator({ accentColor }: { accentColor: string }) {
   const [activeModelTab, setActiveModelTab] = useState<"xgboost" | "rf" | "logreg" | "svm">("xgboost");
 
   useEffect(() => {
-    // Standard mock model training logs
     const mockLogs: Record<typeof activeModelTab, string[]> = {
       xgboost: [
         "[XGBoost] Loading dataset partitions...",
@@ -544,7 +472,6 @@ function LiveTrainingSimulator({ accentColor }: { accentColor: string }) {
       ]
     };
 
-    // Simulate real-time console scrolling logs
     setLogs([]);
     const currentModelLogs = mockLogs[activeModelTab] || [];
     let i = 0;
