@@ -1,6 +1,5 @@
 "use client";
 import Navbar from "@/components/layout/Navbar";
-import Footer from "@/components/layout/Footer";
 import NeonButton from "@/components/ui/NeonButton";
 import CyberCard from "@/components/ui/CyberCard";
 
@@ -136,7 +135,6 @@ export default function ResultsPage({ params }: { params: { id: string } }) {
           </div>
         </CyberCard>
       </div>
-      <Footer />
     </main>
   );
 }

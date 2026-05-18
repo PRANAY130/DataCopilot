@@ -1,5 +1,4 @@
 import Navbar from "@/components/layout/Navbar";
-import Footer from "@/components/layout/Footer";
 import UploadZone from "@/components/upload/UploadZone";
 
 export default function UploadPage() {
@@ -67,8 +66,6 @@ export default function UploadPage() {
           </div>
         </div>
       </div>
-
-      <Footer />
     </main>
   );
 }
