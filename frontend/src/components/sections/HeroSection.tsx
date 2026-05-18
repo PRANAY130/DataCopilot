@@ -374,42 +374,91 @@ export default function HeroSection() {
           </div>
         </div>
 
-        {/* ===== TECH STRIP ===== */}
+        {/* ===== TECH TICKER ===== */}
         <div style={{
           marginTop: 64,
           paddingTop: 28,
           borderTop: "1px solid rgba(0,245,255,0.08)",
-          display: "flex", alignItems: "center", gap: 0,
+          display: "flex", alignItems: "center",
+          overflow: "hidden"
         }}>
-          <span style={{ fontFamily: "'Fira Code',monospace", fontSize: 10, color: "rgba(96,96,160,0.7)", letterSpacing: "0.1em", marginRight: 28, whiteSpace: "nowrap" }}>
+          <span style={{ 
+            fontFamily: "'Fira Code',monospace", 
+            fontSize: 10, 
+            color: "rgba(96,96,160,0.7)", 
+            letterSpacing: "0.1em", 
+            marginRight: 28, 
+            whiteSpace: "nowrap",
+            background: "var(--bg-void)",
+            zIndex: 2,
+            paddingRight: 16
+          }}>
             POWERED BY
           </span>
-          <div style={{ display: "flex", gap: 0, flex: 1 }}>
-            {[
-              { name: "Google Gemini", color: "var(--cyan)" },
-              { name: "Groq AI", color: "var(--purple)" },
-              { name: "Firebase", color: "#ffbb00" },
-              { name: "Neon DB", color: "var(--green)" },
-              { name: "XGBoost", color: "var(--pink)" },
-              { name: "SHAP / LIME", color: "var(--cyan)" },
-            ].map((tech, i) => (
-              <div
-                key={tech.name}
-                style={{
-                  padding: "8px 20px",
-                  fontFamily: "'Fira Code',monospace", fontSize: 11,
-                  color: "rgba(160,160,200,0.5)",
-                  borderLeft: i > 0 ? "1px solid rgba(0,245,255,0.06)" : undefined,
-                  cursor: "default",
-                  transition: "color 0.2s ease",
-                  letterSpacing: "0.06em",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = tech.color; }}
-                onMouseLeave={e => { e.currentTarget.style.color = "rgba(160,160,200,0.5)"; }}
-              >
-                {tech.name}
-              </div>
-            ))}
+          
+          <div style={{ 
+            overflow: "hidden", 
+            display: "flex", 
+            flex: 1, 
+            position: "relative",
+            maskImage: "linear-gradient(to right, transparent, white 15%, white 85%, transparent)",
+            WebkitMaskImage: "linear-gradient(to right, transparent, white 15%, white 85%, transparent)"
+          }}>
+            <style>{`
+              @keyframes tickerLoop {
+                0% { transform: translate3d(0, 0, 0); }
+                100% { transform: translate3d(-50%, 0, 0); }
+              }
+              .ticker-track {
+                display: flex;
+                width: max-content;
+                animation: tickerLoop 25s linear infinite;
+              }
+              .ticker-track:hover {
+                animation-play-state: paused;
+              }
+            `}</style>
+            
+            <div className="ticker-track">
+              {[
+                { name: "Google Gemini", color: "var(--cyan)" },
+                { name: "Groq AI", color: "var(--purple)" },
+                { name: "Firebase", color: "#ffbb00" },
+                { name: "Neon DB", color: "var(--green)" },
+                { name: "XGBoost", color: "var(--pink)" },
+                { name: "SHAP / LIME", color: "var(--cyan)" },
+              ].concat([
+                { name: "Google Gemini", color: "var(--cyan)" },
+                { name: "Groq AI", color: "var(--purple)" },
+                { name: "Firebase", color: "#ffbb00" },
+                { name: "Neon DB", color: "var(--green)" },
+                { name: "XGBoost", color: "var(--pink)" },
+                { name: "SHAP / LIME", color: "var(--cyan)" },
+              ]).map((tech, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: "8px 32px",
+                    fontFamily: "'Fira Code',monospace", fontSize: 11,
+                    color: "rgba(160,160,200,0.5)",
+                    cursor: "default",
+                    transition: "color 0.2s ease, text-shadow 0.2s ease",
+                    letterSpacing: "0.06em",
+                    whiteSpace: "nowrap"
+                  }}
+                  onMouseEnter={e => { 
+                    e.currentTarget.style.color = tech.color; 
+                    e.currentTarget.style.textShadow = `0 0 10px ${tech.color}80`;
+                  }}
+                  onMouseLeave={e => { 
+                    e.currentTarget.style.color = "rgba(160,160,200,0.5)"; 
+                    e.currentTarget.style.textShadow = "none";
+                  }}
+                >
+                  {tech.name}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
