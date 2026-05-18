@@ -5,36 +5,43 @@
    CYBERPUNK NEON — DESIGN SYSTEM
    ====================================================== */
 :root {
-  --bg-void:     #02020a;
-  --bg-deep:     #050510;
-  --bg-card:     #080818;
-  --bg-panel:    #0a0a20;
+  --bg-void: #02020a;
+  --bg-deep: #050510;
+  --bg-card: #080818;
+  --bg-panel: #0a0a20;
 
-  --cyan:        #00f5ff;
-  --cyan-dim:    rgba(0, 245, 255, 0.15);
-  --cyan-glow:   rgba(0, 245, 255, 0.5);
-  --pink:        #ff0066;
-  --pink-dim:    rgba(255, 0, 102, 0.15);
-  --pink-glow:   rgba(255, 0, 102, 0.5);
-  --purple:      #bf00ff;
-  --purple-dim:  rgba(191, 0, 255, 0.15);
+  --cyan: #00f5ff;
+  --cyan-dim: rgba(0, 245, 255, 0.15);
+  --cyan-glow: rgba(0, 245, 255, 0.5);
+  --pink: #ff0066;
+  --pink-dim: rgba(255, 0, 102, 0.15);
+  --pink-glow: rgba(255, 0, 102, 0.5);
+  --purple: #bf00ff;
+  --purple-dim: rgba(191, 0, 255, 0.15);
   --purple-glow: rgba(191, 0, 255, 0.5);
-  --green:       #00ff88;
-  --green-dim:   rgba(0, 255, 136, 0.15);
-  --amber:       #ffbb00;
+  --green: #00ff88;
+  --green-dim: rgba(0, 255, 136, 0.15);
+  --amber: #ffbb00;
 
   --text-bright: #ffffff;
   --text-primary: #e0e0ff;
-  --text-muted:  #6060a0;
-  --text-dim:    #303060;
+  --text-muted: #6060a0;
+  --text-dim: #303060;
 
   --border-faint: rgba(0, 245, 255, 0.08);
-  --border-dim:   rgba(0, 245, 255, 0.18);
-  --border-glow:  rgba(0, 245, 255, 0.5);
+  --border-dim: rgba(0, 245, 255, 0.18);
+  --border-glow: rgba(0, 245, 255, 0.5);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
 
 body {
   background-color: var(--bg-void);
@@ -47,8 +54,14 @@ body {
 /* ======================================================
    SCROLLBAR
    ====================================================== */
-::-webkit-scrollbar { width: 3px; }
-::-webkit-scrollbar-track { background: var(--bg-void); }
+::-webkit-scrollbar {
+  width: 3px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-void);
+}
+
 ::-webkit-scrollbar-thumb {
   background: linear-gradient(var(--cyan), var(--purple));
   border-radius: 2px;
@@ -64,6 +77,7 @@ body {
   background-size: 80px 80px;
   background-position: center center;
 }
+
 .cyber-grid-sm {
   background-image:
     linear-gradient(rgba(0, 245, 255, 0.015) 1px, transparent 1px),
@@ -75,53 +89,142 @@ body {
    GLITCH EFFECT
    ====================================================== */
 @keyframes glitch-1 {
-  0%   { clip-path: inset(40% 0 61% 0); transform: translate(-2px, 0) skewX(-1deg); }
-  20%  { clip-path: inset(92% 0 1% 0);  transform: translate(2px, 0) skewX(1deg); }
-  40%  { clip-path: inset(43% 0 1% 0);  transform: translate(-1px, 0) skewX(0deg); }
-  60%  { clip-path: inset(25% 0 58% 0); transform: translate(1px, 0) skewX(2deg); }
-  80%  { clip-path: inset(54% 0 7% 0);  transform: translate(-2px, 0) skewX(-1deg); }
-  100% { clip-path: inset(58% 0 43% 0); transform: translate(2px, 0) skewX(0deg); }
-}
-@keyframes glitch-2 {
-  0%   { clip-path: inset(25% 0 58% 0); transform: translate(2px, 0) skewX(0.5deg); }
-  20%  { clip-path: inset(54% 0 7% 0);  transform: translate(-1px, 0) skewX(-0.5deg); }
-  40%  { clip-path: inset(58% 0 43% 0); transform: translate(1px, 0) skewX(1deg); }
-  60%  { clip-path: inset(40% 0 61% 0); transform: translate(-2px, 0) skewX(-1deg); }
-  80%  { clip-path: inset(92% 0 1% 0);  transform: translate(2px, 0) skewX(0.5deg); }
-  100% { clip-path: inset(43% 0 1% 0);  transform: translate(-1px, 0) skewX(0deg); }
-}
-@keyframes glitch-skew {
-  0%   { transform: skewX(0deg); }
-  10%  { transform: skewX(-1deg); }
-  20%  { transform: skewX(0.5deg); }
-  30%  { transform: skewX(0deg); }
-  40%  { transform: skewX(0.5deg); }
-  50%  { transform: skewX(-0.5deg); }
-  60%  { transform: skewX(0deg); }
-  70%  { transform: skewX(1deg); }
-  80%  { transform: skewX(0deg); }
-  90%  { transform: skewX(-0.5deg); }
-  100% { transform: skewX(0deg); }
+  0% {
+    clip-path: inset(40% 0 61% 0);
+    transform: translate(-2px, 0) skewX(-1deg);
+  }
+
+  20% {
+    clip-path: inset(92% 0 1% 0);
+    transform: translate(2px, 0) skewX(1deg);
+  }
+
+  40% {
+    clip-path: inset(43% 0 1% 0);
+    transform: translate(-1px, 0) skewX(0deg);
+  }
+
+  60% {
+    clip-path: inset(25% 0 58% 0);
+    transform: translate(1px, 0) skewX(2deg);
+  }
+
+  80% {
+    clip-path: inset(54% 0 7% 0);
+    transform: translate(-2px, 0) skewX(-1deg);
+  }
+
+  100% {
+    clip-path: inset(58% 0 43% 0);
+    transform: translate(2px, 0) skewX(0deg);
+  }
 }
 
-.glitch-wrapper { position: relative; display: inline-block; }
+@keyframes glitch-2 {
+  0% {
+    clip-path: inset(25% 0 58% 0);
+    transform: translate(2px, 0) skewX(0.5deg);
+  }
+
+  20% {
+    clip-path: inset(54% 0 7% 0);
+    transform: translate(-1px, 0) skewX(-0.5deg);
+  }
+
+  40% {
+    clip-path: inset(58% 0 43% 0);
+    transform: translate(1px, 0) skewX(1deg);
+  }
+
+  60% {
+    clip-path: inset(40% 0 61% 0);
+    transform: translate(-2px, 0) skewX(-1deg);
+  }
+
+  80% {
+    clip-path: inset(92% 0 1% 0);
+    transform: translate(2px, 0) skewX(0.5deg);
+  }
+
+  100% {
+    clip-path: inset(43% 0 1% 0);
+    transform: translate(-1px, 0) skewX(0deg);
+  }
+}
+
+@keyframes glitch-skew {
+  0% {
+    transform: skewX(0deg);
+  }
+
+  10% {
+    transform: skewX(-1deg);
+  }
+
+  20% {
+    transform: skewX(0.5deg);
+  }
+
+  30% {
+    transform: skewX(0deg);
+  }
+
+  40% {
+    transform: skewX(0.5deg);
+  }
+
+  50% {
+    transform: skewX(-0.5deg);
+  }
+
+  60% {
+    transform: skewX(0deg);
+  }
+
+  70% {
+    transform: skewX(1deg);
+  }
+
+  80% {
+    transform: skewX(0deg);
+  }
+
+  90% {
+    transform: skewX(-0.5deg);
+  }
+
+  100% {
+    transform: skewX(0deg);
+  }
+}
+
+.glitch-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
 .glitch-wrapper::before,
 .glitch-wrapper::after {
   content: attr(data-text);
   position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
+
 .glitch-wrapper::before {
   color: var(--pink);
   animation: glitch-1 2.5s infinite linear alternate-reverse;
   opacity: 0.7;
 }
+
 .glitch-wrapper::after {
   color: var(--cyan);
   animation: glitch-2 2.5s infinite linear alternate-reverse;
   opacity: 0.7;
 }
+
 .glitch-wrapper {
   animation: glitch-skew 4s infinite linear alternate-reverse;
 }
@@ -130,23 +233,28 @@ body {
    SCAN LINE OVERLAY
    ====================================================== */
 @keyframes scan {
-  0%   { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
+  0% {
+    transform: translateY(-100%);
+  }
+
+  100% {
+    transform: translateY(100vh);
+  }
 }
+
 .scanline-overlay {
   pointer-events: none;
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 245, 255, 0.012) 2px,
-    rgba(0, 245, 255, 0.012) 4px
-  );
+  background: repeating-linear-gradient(0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 245, 255, 0.012) 2px,
+      rgba(0, 245, 255, 0.012) 4px);
   overflow: hidden;
 }
+
 .scanline-overlay::after {
   content: '';
   position: absolute;
@@ -159,41 +267,70 @@ body {
 /* ======================================================
    GLOW UTILITIES
    ====================================================== */
-.glow-cyan  { box-shadow: 0 0 15px var(--cyan-glow), 0 0 50px rgba(0,245,255,0.15); }
-.glow-pink  { box-shadow: 0 0 15px var(--pink-glow), 0 0 50px rgba(255,0,102,0.15); }
-.glow-purple{ box-shadow: 0 0 15px var(--purple-glow),0 0 50px rgba(191,0,255,0.15); }
-.glow-green { box-shadow: 0 0 15px rgba(0,255,136,0.6), 0 0 40px rgba(0,255,136,0.2); }
+.glow-cyan {
+  box-shadow: 0 0 15px var(--cyan-glow), 0 0 50px rgba(0, 245, 255, 0.15);
+}
 
-.text-glow-cyan   { text-shadow: 0 0 6px var(--cyan-glow),  0 0 25px rgba(0,245,255,0.4); }
-.text-glow-pink   { text-shadow: 0 0 6px var(--pink-glow),  0 0 25px rgba(255,0,102,0.4); }
-.text-glow-purple { text-shadow: 0 0 6px var(--purple-glow),0 0 25px rgba(191,0,255,0.4); }
-.text-glow-white  { text-shadow: 0 0 8px rgba(255,255,255,0.8), 0 0 20px rgba(255,255,255,0.3); }
+.glow-pink {
+  box-shadow: 0 0 15px var(--pink-glow), 0 0 50px rgba(255, 0, 102, 0.15);
+}
+
+.glow-purple {
+  box-shadow: 0 0 15px var(--purple-glow), 0 0 50px rgba(191, 0, 255, 0.15);
+}
+
+.glow-green {
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.6), 0 0 40px rgba(0, 255, 136, 0.2);
+}
+
+.text-glow-cyan {
+  text-shadow: 0 0 6px var(--cyan-glow), 0 0 25px rgba(0, 245, 255, 0.4);
+}
+
+.text-glow-pink {
+  text-shadow: 0 0 6px var(--pink-glow), 0 0 25px rgba(255, 0, 102, 0.4);
+}
+
+.text-glow-purple {
+  text-shadow: 0 0 6px var(--purple-glow), 0 0 25px rgba(191, 0, 255, 0.4);
+}
+
+.text-glow-white {
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.3);
+}
 
 /* ======================================================
    SHIMMER / GRADIENT TEXT
    ====================================================== */
 @keyframes shimmer {
-  0%   { background-position: -300% center; }
-  100% { background-position: 300% center; }
+  0% {
+    background-position: -300% center;
+  }
+
+  100% {
+    background-position: 300% center;
+  }
 }
+
 .shimmer-cyan {
   background: linear-gradient(90deg,
-    var(--cyan) 0%,
-    #ffffff 30%,
-    var(--purple) 60%,
-    var(--cyan) 100%);
+      var(--cyan) 0%,
+      #ffffff 30%,
+      var(--purple) 60%,
+      var(--cyan) 100%);
   background-size: 300% auto;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: shimmer 5s linear infinite;
 }
+
 .shimmer-pink {
   background: linear-gradient(90deg,
-    var(--pink) 0%,
-    #ffffff 40%,
-    var(--amber) 70%,
-    var(--pink) 100%);
+      var(--pink) 0%,
+      #ffffff 40%,
+      var(--amber) 70%,
+      var(--pink) 100%);
   background-size: 300% auto;
   -webkit-background-clip: text;
   background-clip: text;
@@ -205,29 +342,77 @@ body {
    PULSE / BLINK ANIMATIONS
    ====================================================== */
 @keyframes pulse-glow {
-  0%, 100% { opacity: 0.6; box-shadow: 0 0 4px currentColor; }
-  50%       { opacity: 1;   box-shadow: 0 0 12px currentColor, 0 0 25px currentColor; }
+
+  0%,
+  100% {
+    opacity: 0.6;
+    box-shadow: 0 0 4px currentColor;
+  }
+
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 12px currentColor, 0 0 25px currentColor;
+  }
 }
+
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
 }
+
 @keyframes float-in {
-  from { opacity: 0; transform: translateY(40px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
+
 @keyframes flicker {
-  0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; }
-  20%, 24%, 55% { opacity: 0.4; }
+
+  0%,
+  19%,
+  21%,
+  23%,
+  25%,
+  54%,
+  56%,
+  100% {
+    opacity: 1;
+  }
+
+  20%,
+  24%,
+  55% {
+    opacity: 0.4;
+  }
 }
 
 .pulse-dot {
-  width: 7px; height: 7px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   animation: pulse-glow 2s ease-in-out infinite;
 }
-.blink { animation: blink 1s step-end infinite; }
-.flicker { animation: flicker 3s infinite; }
+
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+.flicker {
+  animation: flicker 3s infinite;
+}
 
 /* ======================================================
    NEON HORIZONTAL DIVIDER
@@ -250,42 +435,69 @@ body {
   border: 1px solid var(--border-faint);
   transition: border-color 0.35s ease, box-shadow 0.35s ease, transform 0.35s ease;
 }
+
 .cyber-card:hover {
   border-color: var(--border-glow);
-  box-shadow: 0 0 30px rgba(0,245,255,0.08), 0 20px 60px rgba(0,0,0,0.5), inset 0 0 30px rgba(0,245,255,0.02);
+  box-shadow: 0 0 30px rgba(0, 245, 255, 0.08), 0 20px 60px rgba(0, 0, 0, 0.5), inset 0 0 30px rgba(0, 245, 255, 0.02);
   transform: translateY(-3px);
 }
+
 /* Corner decorations */
 .cyber-card::before {
   content: '';
   position: absolute;
-  top: -1px; left: -1px;
-  width: 16px; height: 16px;
+  top: -1px;
+  left: -1px;
+  width: 16px;
+  height: 16px;
   border-top: 1px solid var(--cyan);
   border-left: 1px solid var(--cyan);
   transition: width 0.3s, height 0.3s;
 }
+
 .cyber-card::after {
   content: '';
   position: absolute;
-  bottom: -1px; right: -1px;
-  width: 16px; height: 16px;
+  bottom: -1px;
+  right: -1px;
+  width: 16px;
+  height: 16px;
   border-bottom: 1px solid var(--cyan);
   border-right: 1px solid var(--cyan);
   transition: width 0.3s, height 0.3s;
 }
-.cyber-card:hover::before { width: 28px; height: 28px; }
-.cyber-card:hover::after  { width: 28px; height: 28px; }
+
+.cyber-card:hover::before {
+  width: 28px;
+  height: 28px;
+}
+
+.cyber-card:hover::after {
+  width: 28px;
+  height: 28px;
+}
 
 /* Pink variant */
 .cyber-card-pink::before,
-.cyber-card-pink::after { border-color: var(--pink); }
-.cyber-card-pink:hover  { border-color: var(--pink-glow); box-shadow: 0 0 30px rgba(255,0,102,0.08), 0 20px 60px rgba(0,0,0,0.5); }
+.cyber-card-pink::after {
+  border-color: var(--pink);
+}
+
+.cyber-card-pink:hover {
+  border-color: var(--pink-glow);
+  box-shadow: 0 0 30px rgba(255, 0, 102, 0.08), 0 20px 60px rgba(0, 0, 0, 0.5);
+}
 
 /* Purple variant */
 .cyber-card-purple::before,
-.cyber-card-purple::after { border-color: var(--purple); }
-.cyber-card-purple:hover  { border-color: var(--purple-glow); box-shadow: 0 0 30px rgba(191,0,255,0.08), 0 20px 60px rgba(0,0,0,0.5); }
+.cyber-card-purple::after {
+  border-color: var(--purple);
+}
+
+.cyber-card-purple:hover {
+  border-color: var(--purple-glow);
+  box-shadow: 0 0 30px rgba(191, 0, 255, 0.08), 0 20px 60px rgba(0, 0, 0, 0.5);
+}
 
 /* ======================================================
    BUTTONS
@@ -306,49 +518,62 @@ body {
   clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
   white-space: nowrap;
 }
-.btn-lg { padding: 14px 32px; font-size: 14px; clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
-.btn-sm { padding: 8px 18px; font-size: 12px; }
+
+.btn-lg {
+  padding: 14px 32px;
+  font-size: 14px;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+}
+
+.btn-sm {
+  padding: 8px 18px;
+  font-size: 12px;
+}
 
 .btn-cyan {
-  background: linear-gradient(135deg, rgba(0,245,255,0.18), rgba(0,245,255,0.06));
+  background: linear-gradient(135deg, rgba(0, 245, 255, 0.18), rgba(0, 245, 255, 0.06));
   border: 1px solid var(--cyan);
   color: var(--cyan);
 }
+
 .btn-cyan:hover {
-  background: linear-gradient(135deg, rgba(0,245,255,0.35), rgba(0,245,255,0.15));
-  box-shadow: 0 0 20px var(--cyan-glow), 0 0 60px rgba(0,245,255,0.15);
+  background: linear-gradient(135deg, rgba(0, 245, 255, 0.35), rgba(0, 245, 255, 0.15));
+  box-shadow: 0 0 20px var(--cyan-glow), 0 0 60px rgba(0, 245, 255, 0.15);
   color: #fff;
   text-shadow: 0 0 8px var(--cyan);
 }
 
 .btn-pink {
-  background: linear-gradient(135deg, rgba(255,0,102,0.18), rgba(255,0,102,0.06));
+  background: linear-gradient(135deg, rgba(255, 0, 102, 0.18), rgba(255, 0, 102, 0.06));
   border: 1px solid var(--pink);
   color: var(--pink);
 }
+
 .btn-pink:hover {
-  background: linear-gradient(135deg, rgba(255,0,102,0.35), rgba(255,0,102,0.15));
-  box-shadow: 0 0 20px var(--pink-glow), 0 0 60px rgba(255,0,102,0.15);
+  background: linear-gradient(135deg, rgba(255, 0, 102, 0.35), rgba(255, 0, 102, 0.15));
+  box-shadow: 0 0 20px var(--pink-glow), 0 0 60px rgba(255, 0, 102, 0.15);
   color: #fff;
 }
 
 .btn-ghost {
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.14);
-  color: rgba(255,255,255,0.6);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.6);
 }
+
 .btn-ghost:hover {
-  border-color: rgba(255,255,255,0.35);
+  border-color: rgba(255, 255, 255, 0.35);
   color: #fff;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .btn-solid-cyan {
-  background: linear-gradient(135deg, rgba(0,245,255,0.9), rgba(0,245,255,0.7));
+  background: linear-gradient(135deg, rgba(0, 245, 255, 0.9), rgba(0, 245, 255, 0.7));
   border: 1px solid var(--cyan);
   color: var(--bg-void);
   font-weight: 700;
 }
+
 .btn-solid-cyan:hover {
   background: #fff;
   box-shadow: 0 0 30px var(--cyan-glow);
@@ -359,7 +584,9 @@ body {
    ====================================================== */
 .navbar {
   position: fixed;
-  top: 0; left: 0; right: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 200;
   backdrop-filter: blur(24px) saturate(1.5);
   -webkit-backdrop-filter: blur(24px) saturate(1.5);
@@ -371,30 +598,36 @@ body {
    UPLOAD ZONE
    ====================================================== */
 .upload-zone {
-  border: 1px dashed rgba(0,245,255,0.22);
-  background: rgba(0,245,255,0.018);
+  border: 1px dashed rgba(0, 245, 255, 0.22);
+  background: rgba(0, 245, 255, 0.018);
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
 }
+
 .upload-zone:hover,
 .upload-zone.dragging {
   border-color: var(--cyan);
-  background: rgba(0,245,255,0.05);
+  background: rgba(0, 245, 255, 0.05);
   box-shadow:
-    0 0 40px rgba(0,245,255,0.1),
-    inset 0 0 60px rgba(0,245,255,0.03);
+    0 0 40px rgba(0, 245, 255, 0.1),
+    inset 0 0 60px rgba(0, 245, 255, 0.03);
 }
 
 /* ======================================================
    STEP TRACKER
    ====================================================== */
-.step-item { position: relative; }
-.step-item + .step-item::before {
+.step-item {
+  position: relative;
+}
+
+.step-item+.step-item::before {
   content: '';
   position: absolute;
-  left: 19px; top: -16px;
-  width: 1px; height: 16px;
+  left: 19px;
+  top: -16px;
+  width: 1px;
+  height: 16px;
   background: linear-gradient(var(--border-dim), var(--border-faint));
 }
 
@@ -406,22 +639,37 @@ body {
   border: 1px solid var(--border-dim);
   font-family: 'Fira Code', monospace;
 }
+
 .terminal-header {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border-faint);
-  background: rgba(0,245,255,0.03);
+  background: rgba(0, 245, 255, 0.03);
 }
+
 .terminal-dot {
-  width: 10px; height: 10px; border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
 }
 
 /* ======================================================
    TYPING CURSOR
    ====================================================== */
-@keyframes type-cursor { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes type-cursor {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
 .type-cursor::after {
   content: '▮';
   color: var(--cyan);
@@ -434,14 +682,17 @@ body {
    PROGRESS BAR
    ====================================================== */
 @keyframes progress-fill {
-  from { width: 0%; }
+  from {
+    width: 0%;
+  }
 }
+
 .progress-bar-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--cyan), var(--purple));
   box-shadow: 0 0 10px var(--cyan-glow);
   border-radius: 2px;
-  transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ======================================================
@@ -454,6 +705,7 @@ body {
   text-transform: uppercase;
   margin-bottom: 14px;
 }
+
 .section-title {
   font-family: 'Orbitron', sans-serif;
   font-weight: 700;
@@ -473,7 +725,9 @@ body {
    NOISE TEXTURE OVERLAY
    ====================================================== */
 .noise-overlay {
-  position: fixed; inset: 0; z-index: 9998;
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
   pointer-events: none;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
   opacity: 0.3;
@@ -483,10 +737,21 @@ body {
    HERO ORBS
    ====================================================== */
 @keyframes orb-drift {
-  0%,100% { transform: translate(0,0) scale(1); }
-  33%      { transform: translate(30px,-20px) scale(1.05); }
-  66%      { transform: translate(-20px, 15px) scale(0.97); }
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -20px) scale(1.05);
+  }
+
+  66% {
+    transform: translate(-20px, 15px) scale(0.97);
+  }
 }
+
 .orb {
   position: absolute;
   border-radius: 50%;
@@ -504,8 +769,9 @@ body {
   border-left: 2px solid var(--cyan);
   border-radius: 0 8px 8px 8px;
 }
+
 .chat-bubble-user {
-  background: rgba(0,245,255,0.06);
+  background: rgba(0, 245, 255, 0.06);
   border: 1px solid var(--border-dim);
   border-right: 2px solid var(--pink);
   border-radius: 8px 0 8px 8px;
@@ -518,12 +784,92 @@ body {
   border-bottom: 1px solid var(--border-faint);
   transition: background 0.2s;
 }
-.model-row:hover { background: rgba(0,245,255,0.03); }
-.model-row.best  { background: rgba(0,245,255,0.05); border-color: var(--border-dim); }
+
+.model-row:hover {
+  background: rgba(0, 245, 255, 0.03);
+}
+
+.model-row.best {
+  background: rgba(0, 245, 255, 0.05);
+  border-color: var(--border-dim);
+}
+
+
+/* ======================================================
+   STRONG HOVER &amp; INTERACTION OVERRIDES
+
+   ====================================================== */
+
+/* --- Cards --- */
+.cyber-card { transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease, background 0.25s ease !important; }
+.cyber-card:hover {
+  border-color: var(--cyan) !important;
+  background: rgba(0, 245, 255, 0.03) !important;
+  box-shadow: 0 0 0 1px rgba(0,245,255,0.2), 0 0 40px rgba(0,245,255,0.2), 0 0 80px rgba(0,245,255,0.07), 0 20px 60px rgba(0,0,0,0.6) !important;
+  transform: translateY(-6px) !important;
+}
+.cyber-card:active { transform: translateY(-2px) scale(0.99) !important; }
+.cyber-card:hover::before { width: 40px !important; height: 40px !important; box-shadow: -2px -2px 12px rgba(0,245,255,0.4) !important; }
+.cyber-card:hover::after  { width: 40px !important; height: 40px !important; box-shadow:  2px  2px 12px rgba(0,245,255,0.4) !important; }
+
+.cyber-card-pink:hover  { border-color: var(--pink)   !important; background: rgba(255,0,102,0.03) !important; box-shadow: 0 0 0 1px rgba(255,0,102,0.2), 0 0 40px rgba(255,0,102,0.2), 0 20px 60px rgba(0,0,0,0.6) !important; }
+.cyber-card-purple:hover{ border-color: var(--purple) !important; background: rgba(191,0,255,0.03) !important; box-shadow: 0 0 0 1px rgba(191,0,255,0.2), 0 0 40px rgba(191,0,255,0.2), 0 20px 60px rgba(0,0,0,0.6) !important; }
+
+/* --- Buttons --- */
+.btn { transition: all 0.2s cubic-bezier(0.4,0,0.2,1) !important; }
+
+.btn-cyan:hover {
+  background: linear-gradient(135deg, rgba(0,245,255,0.4), rgba(0,245,255,0.15)) !important;
+  box-shadow: 0 0 25px rgba(0,245,255,0.75), 0 0 60px rgba(0,245,255,0.25), 0 8px 24px rgba(0,0,0,0.5) !important;
+  color: #ffffff !important;
+  text-shadow: 0 0 12px rgba(0,245,255,1) !important;
+  transform: translateY(-3px) !important;
+  border-color: rgba(0,245,255,0.9) !important;
+}
+.btn-cyan:active { transform: translateY(-1px) scale(0.97) !important; box-shadow: 0 0 14px rgba(0,245,255,0.5) !important; }
+
+.btn-pink:hover {
+  background: linear-gradient(135deg, rgba(255,0,102,0.4), rgba(255,0,102,0.15)) !important;
+  box-shadow: 0 0 25px rgba(255,0,102,0.75), 0 0 60px rgba(255,0,102,0.25), 0 8px 24px rgba(0,0,0,0.5) !important;
+  color: #ffffff !important;
+  text-shadow: 0 0 12px rgba(255,0,102,1) !important;
+  transform: translateY(-3px) !important;
+}
+.btn-pink:active { transform: translateY(-1px) scale(0.97) !important; }
+
+.btn-ghost:hover {
+  border-color: rgba(255,255,255,0.6) !important;
+  color: #ffffff !important;
+  background: rgba(255,255,255,0.08) !important;
+  box-shadow: 0 0 20px rgba(255,255,255,0.12), 0 8px 24px rgba(0,0,0,0.4) !important;
+  transform: translateY(-3px) !important;
+}
+.btn-ghost:active { transform: translateY(-1px) scale(0.97) !important; }
+
+.btn-solid-cyan:hover {
+  background: #ffffff !important;
+  box-shadow: 0 0 35px rgba(0,245,255,0.9), 0 0 80px rgba(0,245,255,0.3), 0 8px 24px rgba(0,0,0,0.5) !important;
+  transform: translateY(-3px) !important;
+}
+.btn-solid-cyan:active { transform: translateY(-1px) scale(0.97) !important; }
+
+/* --- Upload zone --- */
+.upload-zone:hover,
+.upload-zone.dragging {
+  border-color: var(--cyan) !important;
+  border-style: solid !important;
+  background: rgba(0,245,255,0.06) !important;
+  box-shadow: 0 0 50px rgba(0,245,255,0.2), 0 0 100px rgba(0,245,255,0.07), inset 0 0 50px rgba(0,245,255,0.04) !important;
+}
+
+/* --- Model rows --- */
+.model-row:hover { background: rgba(0,245,255,0.05) !important; }
 
 /* ======================================================
    RESPONSIVE UTILITIES
    ====================================================== */
 @media (max-width: 768px) {
-  .hide-mobile { display: none !important; }
+  .hide-mobile {
+    display: none !important;
+  }
 }
