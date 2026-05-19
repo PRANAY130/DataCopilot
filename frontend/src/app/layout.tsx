@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "@/context/AuthContext";
+import { SessionProvider } from "@/context/SessionContext";
+import AuthGate from "@/components/auth/AuthGate";
 
 export const metadata: Metadata = {
   title: "DataCopilot — AI-Powered Data Science Copilot",
@@ -15,8 +18,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="scanline-overlay" />
         {/* Subtle noise texture */}
         <div className="noise-overlay" />
-        {children}
+        <AuthProvider>
+          <SessionProvider>
+            <AuthGate>
+              {children}
+            </AuthGate>
+          </SessionProvider>
+        </AuthProvider>
       </body>
     </html>
   );
 }
+
