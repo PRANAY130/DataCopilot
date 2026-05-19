@@ -37,7 +37,7 @@ async def get_current_user(
         )
 
     try:
-        decoded = firebase_auth.verify_id_token(token)
+        decoded = firebase_auth.verify_id_token(token, clock_skew_seconds=60)
         return decoded["uid"]
     except Exception as e:
         logger.warning(f"Token verification failed: {e}")
@@ -59,7 +59,7 @@ async def get_current_user_ws(token: str | None) -> str:
         return DEV_UID  # Fallback in case Firebase isn't configured
 
     try:
-        decoded = firebase_auth.verify_id_token(token)
+        decoded = firebase_auth.verify_id_token(token, clock_skew_seconds=60)
         return decoded["uid"]
     except Exception as e:
         logger.warning(f"WS token verification failed: {e}")

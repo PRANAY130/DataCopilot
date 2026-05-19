@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, use } from "react";
+import { useEffect, use, useState } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import NeonButton from "@/components/ui/NeonButton";
@@ -7,6 +7,7 @@ import StepTracker from "@/components/analysis/StepTracker";
 import { useSession } from "@/context/SessionContext";
 import { useAuthHeader } from "@/context/AuthContext";
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 const STEP_IDS = ["upload", "analyze", "task", "preprocess", "recommend", "train", "evaluate", "shap", "viz"];
 const STEP_LABELS: Record<string, string> = {
   upload: "Dataset Ingest",
@@ -34,18 +35,47 @@ const STEP_DETAILS: Record<string, string> = {
 export default function AnalysisPage({ params }: { params: Promise<{ id: string }> | any }) {
   const router = useRouter();
   const authHeader = useAuthHeader();
-  const { session, startSession } = useSession();
+  const { session, startSession, loadSessionFromApi } = useSession();
+  const [checkingApi, setCheckingApi] = useState(true);
 
   const sessionId = typeof params === "object" && !(params instanceof Promise)
     ? params.id
     : use(params as Promise<{ id: string }>).id;
 
-  // Start the session (open WebSocket) when the page mounts
+  // Smart loader: check if session is already done → load from API (Firestore)
+  // Otherwise open a WebSocket for live streaming
   useEffect(() => {
-    if (sessionId) {
-      startSession(sessionId, authHeader ? authHeader.replace("Bearer ", "") : null);
+    if (!sessionId) return;
+
+    // Already loaded this session → do nothing
+    if (session?.sessionId === sessionId) {
+      setCheckingApi(false);
+      return;
     }
+
+    const token = authHeader ? authHeader.replace("Bearer ", "") : null;
+    const headers: Record<string, string> = {};
+    if (authHeader) headers["Authorization"] = authHeader;
+
+    // Check the API first — if session exists and is done, load from Firestore
+    fetch(`${BACKEND_URL}/api/session/${sessionId}`, { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.status === "done") {
+          // Completed session → restore from Firestore, no WebSocket needed
+          loadSessionFromApi(sessionId, token);
+        } else {
+          // New or still-running session → open WebSocket
+          startSession(sessionId, token);
+        }
+      })
+      .catch(() => {
+        // Network error → fallback to WebSocket
+        startSession(sessionId, token);
+      })
+      .finally(() => setCheckingApi(false));
   }, [sessionId]);
+
 
   const done = session?.status === "done";
   const steps = STEP_IDS.map(id => {
@@ -73,6 +103,19 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
   return (
     <main style={{ background: "var(--bg-void)", minHeight: "100vh" }} className="cyber-grid-sm">
       <Navbar />
+
+      {/* Loading state while we check the API */}
+      {checkingApi && !session && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"80vh", flexDirection:"column", gap:16 }}>
+          <div className="pulse-dot" style={{ backgroundColor:"var(--cyan)", width:10, height:10 }} />
+          <p style={{ fontFamily:"Fira Code, monospace", fontSize:12, color:"var(--cyan)", letterSpacing:"0.15em" }}>
+            // LOADING SESSION {sessionId}...
+          </p>
+        </div>
+      )}
+
+      {/* Main content — shown once session state is available */}
+      {!checkingApi || session ? (
       <div style={{ maxWidth: 1300, margin: "0 auto", padding: "100px 24px 80px" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 32 }}>
@@ -141,6 +184,7 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
           </div>
         </div>
       </div>
+      ) : null}
     </main>
   );
 }

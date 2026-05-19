@@ -320,6 +320,15 @@ async def analysis_websocket(
     except Exception as e:
         logger.error(f"WebSocket error for session {session_id}: {e}")
     finally:
+        # Delete the dataset file to save space (no longer needed once results are in Firestore)
+        try:
+            p = Path(file_path)
+            if p.exists() and p.is_file():
+                p.unlink()
+                logger.info(f"Cleaned up temporary dataset file: {file_path}")
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to clean up file {file_path}: {cleanup_err}")
+
         logger.info(f"WS pipeline completed: session={session_id}")
 
 

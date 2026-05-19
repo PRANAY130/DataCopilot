@@ -260,36 +260,94 @@ function RecommendView({data,accent}:{data:any;accent:string}) {
   );
 }
 
+
 function TrainView({data,accent,session}:{data:any;accent:string;session:any}) {
-  const [tab,setTab] = (()=>{const{useState}=require("react");return useState("xgboost");})();
-  const trainStep = session?.steps?.train;
-  const logs:(string[]) = trainStep?.data?.logs?.[tab] || data.logs?.[tab] || [];
-  const models = [
-    {id:"xgboost",name:"XGBoost"},{id:"rf",name:"RandForest"},
-    {id:"logreg",name:"LogReg"},{id:"linear",name:"Linear"},
+  const [tab, setTab] = useState("xgboost");
+
+  // Logs come from:
+  // 1. data.logs  — persisted in the "done" event (always available for completed sessions)
+  // 2. session.steps.train.data.logs — live-streaming during the run
+  const logsSource = data.logs || session?.steps?.train?.data?.logs || {};
+  const logs: string[] = logsSource[tab] || [];
+
+  const MODELS = [
+    {id:"xgboost",name:"XGBoost"},
+    {id:"rf",name:"RandForest"},
+    {id:"logreg",name:"LogReg"},
+    {id:"linear",name:"Linear"},
     {id:"svm",name:"SVM"},
   ];
-  const cv = data.cv_results||{};
+  const cv: Record<string,any> = data.cv_results || {};
+  const activeTabs = MODELS.filter(m => cv[m.id]);
+
   return (
     <div>
-      <div style={{display:"grid",gridTemplateColumns:`repeat(${models.filter(m=>cv[m.id]).length||4},1fr)`,gap:1,background:"var(--border-faint)",border:"1px solid var(--border-faint)",marginBottom:16}}>
-        {models.filter(m=>cv[m.id]||true).slice(0,4).map(m=>(
-          <div key={m.id} onClick={()=>setTab(m.id)} style={{padding:"10px",background:tab===m.id?"rgba(255,255,255,0.03)":"var(--bg-card)",borderBottom:tab===m.id?`2px solid ${accent}`:"2px solid transparent",textAlign:"center",cursor:"pointer"}}>
-            <div style={{fontFamily:"Rajdhani, sans-serif",fontWeight:700,fontSize:13,color:tab===m.id?"var(--text-bright)":"var(--text-muted)"}}>{m.name}</div>
-            {cv[m.id] && <div style={{fontFamily:"Fira Code, monospace",fontSize:9,color:tab===m.id?accent:"var(--text-dim)"}}>{cv[m.id].mean}</div>}
-          </div>
-        ))}
-      </div>
-      <div style={{background:"#030308",border:"1px solid var(--border-dim)",padding:"16px 20px",height:260,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
-        {logs.length===0 ? (
-          <div style={{fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-muted)"}}>Waiting for training logs...</div>
-        ) : logs.map((log:string,i:number)=>(
-          <div key={i} style={{fontFamily:"Fira Code, monospace",fontSize:12,color:log.includes("✓")||log.includes("complete")||log.includes("Complete")?"var(--green)":"var(--text-primary)",lineHeight:1.5}}>{log}</div>
-        ))}
+      {/* Model tabs — only show models that have CV results */}
+      {activeTabs.length > 0 && (
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${activeTabs.length},1fr)`,gap:1,background:"var(--border-faint)",border:"1px solid var(--border-faint)",marginBottom:16}}>
+          {activeTabs.map(m => (
+            <div key={m.id} onClick={()=>setTab(m.id)}
+              style={{padding:"10px",background:tab===m.id?"rgba(255,255,255,0.03)":"var(--bg-card)",borderBottom:tab===m.id?`2px solid ${accent}`:"2px solid transparent",textAlign:"center",cursor:"pointer"}}>
+              <div style={{fontFamily:"Rajdhani, sans-serif",fontWeight:700,fontSize:13,color:tab===m.id?"var(--text-bright)":"var(--text-muted)"}}>{m.name}</div>
+              <div style={{fontFamily:"Fira Code, monospace",fontSize:9,color:tab===m.id?accent:"var(--text-dim)"}}>{cv[m.id].mean}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Log terminal */}
+      <div style={{background:"#030308",border:"1px solid var(--border-dim)",padding:"16px 20px",height:260,overflowY:"auto",display:"flex",flexDirection:"column",gap:4}}>
+        {logs.length === 0 ? (
+          // CV scores table fallback when logs not available
+          activeTabs.length > 0 ? (
+            <div style={{display:"flex",flexDirection:"column",gap:8,padding:"8px 0"}}>
+              <div style={{fontFamily:"Fira Code, monospace",fontSize:10,color:accent,letterSpacing:"0.12em",marginBottom:8}}>// CROSS-VALIDATION RESULTS</div>
+              {activeTabs.map(m => {
+                const res = cv[m.id];
+                const folds: number[] = res.folds || [];
+                const mean: number = res.mean || 0;
+                const best = mean === Math.max(...activeTabs.map(x => cv[x.id]?.mean || 0));
+                return (
+                  <div key={m.id} style={{borderBottom:"1px solid var(--border-faint)",paddingBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{fontFamily:"Rajdhani, sans-serif",fontWeight:700,fontSize:14,color:best?"var(--green)":"var(--text-bright)"}}>
+                        {m.name} {best && <span style={{fontFamily:"Fira Code, monospace",fontSize:9,color:"var(--green)",border:"1px solid var(--green)",padding:"1px 4px",marginLeft:4}}>BEST</span>}
+                      </span>
+                      <span style={{fontFamily:"Fira Code, monospace",fontSize:12,color:best?"var(--green)":accent}}>mean: {mean}</span>
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {folds.map((s,i) => (
+                        <span key={i} style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)"}}>
+                          fold{i+1}: <span style={{color:"var(--text-primary)"}}>{s}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div className="pulse-dot" style={{backgroundColor:accent,width:6,height:6}} />
+              <span style={{fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-muted)"}}>Waiting for training logs...</span>
+            </div>
+          )
+        ) : (
+          logs.map((log:string,i:number) => (
+            <div key={i} style={{
+              fontFamily:"Fira Code, monospace",fontSize:12,lineHeight:1.5,
+              color: log.includes("✓") ? "var(--green)" :
+                     log.includes("Fold") ? "var(--text-primary)" :
+                     "var(--cyan)"
+            }}>{log}</div>
+          ))
+        )}
       </div>
     </div>
   );
 }
+
+
 
 function EvaluateView({data,accent}:{data:any;accent:string}) {
   const metrics:any[] = data.metrics||[];

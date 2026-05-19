@@ -373,7 +373,22 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
             "log": f"[{m_info['name']}] ✓ Complete. Mean CV {metric_label}: {mean_score:.4f}",
         })
 
-    yield event("train", "done", {"cv_results": cv_results})
+    # Build summary log lines for persistence (mirrors what was streamed live)
+    metric_label = "R²" if is_regression else "Accuracy"
+    summary_logs = {}
+    for m_info in candidate_models:
+        mid = m_info["id"]
+        res = cv_results.get(mid, {})
+        folds = res.get("folds", [])
+        mean_s = res.get("mean", 0)
+        lines = [f"[{m_info['name']}] Ran {n_splits}-Fold Cross-Validation..."]
+        for i, score in enumerate(folds):
+            lines.append(f"[{m_info['name']}] Fold {i+1}/{n_splits} → CV {metric_label}: {score:.4f}")
+        lines.append(f"[{m_info['name']}] ✓ Complete. Mean CV {metric_label}: {mean_s:.4f}")
+        summary_logs[mid] = lines
+
+    yield event("train", "done", {"cv_results": cv_results, "logs": summary_logs})
+
 
     # ── STEP 7: EVALUATION ─────────────────────────────────────────────────────
     yield event("evaluate", "running", {})
