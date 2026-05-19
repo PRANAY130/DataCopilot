@@ -32,9 +32,8 @@ export default function GlitchText({
   }, [interval]);
 
   return (
-    // @ts-expect-error dynamic tag
     <Tag
-      ref={ref}
+      ref={ref as any}
       data-text={text}
       className={className}
       style={style}

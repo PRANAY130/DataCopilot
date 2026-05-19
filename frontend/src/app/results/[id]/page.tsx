@@ -32,13 +32,53 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
     </main>
   );
 
+  if (!session) return (
+    <main style={{background:"var(--bg-void)",minHeight:"100vh"}} className="cyber-grid-sm">
+      <Navbar />
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"80vh",flexDirection:"column",gap:16}}>
+        <div style={{fontFamily:"Fira Code, monospace",fontSize:13,color:"var(--pink)"}}>// SESSION NOT FOUND</div>
+        <div style={{fontFamily:"Inter, sans-serif",fontSize:14,color:"var(--text-muted)"}}>This analysis session does not exist or has expired.</div>
+      </div>
+    </main>
+  );
+
   const evaluate = session?.steps?.evaluate?.data || {};
   const shap = session?.steps?.shap?.data || {};
   const task = session?.steps?.task?.data || {};
+  const cmRaw:any[] = evaluate.confusion_matrix||[];
+  const cm:number[][] = cmRaw.map(r => r.row ? r.row : r);
+  const fpr:number[] = evaluate.roc_fpr||[];
   const metrics: any[] = evaluate.metrics || [];
   const best = metrics.find((m:any) => m.is_best) || metrics[0] || {};
   const features: any[] = shap.features || [];
   const isReg = task.task_type === "Regression";
+  const isClustering = task.task_type === "Clustering";
+  const isTimeSeries = task.task_type === "Time Series";
+  const isDone = session?.status === "done";
+
+  if (!isDone && metrics.length === 0) return (
+    <main style={{background:"var(--bg-void)",minHeight:"100vh"}} className="cyber-grid-sm">
+      <Navbar />
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"80vh",flexDirection:"column",gap:16}}>
+        <div style={{width:40,height:40,border:"3px solid var(--border-dim)",borderTopColor:"var(--cyan)",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+        <div style={{fontFamily:"Fira Code, monospace",fontSize:13,color:"var(--cyan)"}}>// ANALYSIS IN PROGRESS...</div>
+        <div style={{fontFamily:"Inter, sans-serif",fontSize:13,color:"var(--text-muted)"}}>The pipeline is still running. Go back to the analysis page to track progress.</div>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <NeonButton href={`/analysis/${sessionId}`} variant="cyan">← Back to Pipeline</NeonButton>
+      </div>
+    </main>
+  );
+
+  if (isDone && metrics.length === 0) return (
+    <main style={{background:"var(--bg-void)",minHeight:"100vh"}} className="cyber-grid-sm">
+      <Navbar />
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"80vh",flexDirection:"column",gap:16}}>
+        <div style={{fontFamily:"Fira Code, monospace",fontSize:13,color:"var(--amber)"}}>// RESULTS UNAVAILABLE</div>
+        <div style={{fontFamily:"Inter, sans-serif",fontSize:14,color:"var(--text-muted)",textAlign:"center",maxWidth:400}}>The analysis completed but results could not be saved. Please start a new analysis from the upload page.</div>
+        <NeonButton href="/upload" variant="ghost">Upload New Dataset</NeonButton>
+      </div>
+    </main>
+  );
 
   return (
     <main style={{background:"var(--bg-void)",minHeight:"100vh"}} className="cyber-grid-sm">
@@ -58,7 +98,7 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
                 {task.task_type}
               </span>
               <span style={{fontFamily:"Fira Code, monospace",fontSize:11,color:"var(--green)",border:"1px solid rgba(0,255,136,0.2)",padding:"3px 10px"}}>
-                Best: {best.model} {!isReg && best.accuracy ? `${(best.accuracy*100).toFixed(1)}%` : best.r2}
+                Best: {best.model} {isClustering ? (best.silhouette ? `Sil: ${best.silhouette.toFixed(3)}` : "") : (!isReg && !isTimeSeries && best.accuracy ? `${(best.accuracy*100).toFixed(1)}%` : best.r2)}
               </span>
             </div>
           </div>
@@ -76,9 +116,15 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:1,background:"var(--border-faint)",border:"1px solid var(--border-faint)",marginBottom:28}}>
           {[
             {label:"Best Model", value: best.model || "—", color:"var(--cyan)"},
-            {label: isReg?"R² Score":"Accuracy", value: isReg?(best.r2||"—"):best.accuracy?`${(best.accuracy*100).toFixed(1)}%`:"—", color:"var(--green)"},
-            {label: isReg?"MAE":"ROC-AUC", value: isReg?(best.mae||"—"):(best.auc||"—"), color:"var(--purple)"},
-            {label: isReg?"RMSE":"F1-Score", value: isReg?(best.rmse||"—"):(best.f1||"—"), color:"var(--pink)"},
+            isClustering
+              ? {label:"Silhouette", value: best.silhouette?.toFixed(4)||"—", color:"var(--green)"}
+              : {label: isReg||isTimeSeries?"R² Score":"Accuracy", value: isReg||isTimeSeries?(best.r2||"—"):best.accuracy?`${(best.accuracy*100).toFixed(1)}%`:"—", color:"var(--green)"},
+            isClustering
+              ? {label:"Davies-Bouldin", value: best.davies_bouldin?.toFixed(4)||"—", color:"var(--purple)"}
+              : {label: isReg||isTimeSeries?"MAE":"ROC-AUC", value: isReg||isTimeSeries?(best.mae||"—"):(best.auc||"—"), color:"var(--purple)"},
+            isClustering
+              ? {label:"Clusters", value: "—", color:"var(--pink)"}
+              : {label: isTimeSeries?"MAPE":isReg?"RMSE":"F1-Score", value: isTimeSeries?(best.mape||"—"):isReg?(best.rmse||"—"):(best.f1||"—"), color:"var(--pink)"},
           ].map(m=>(
             <div key={m.label} style={{padding:"24px 20px",background:"var(--bg-card)",textAlign:"center"}}>
               <div style={{fontFamily:"Orbitron, sans-serif",fontWeight:700,fontSize:"1.8rem",color:m.color,marginBottom:6}}>{m.value}</div>
@@ -96,7 +142,15 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead>
                 <tr style={{borderBottom:"1px solid var(--border-faint)"}}>
-                  {["Model", isReg?"R²":"Acc", isReg?"MAE":"F1", isReg?"RMSE":"AUC"].map(h=>(
+                  {isClustering
+                    ? ["Model", "Silhouette", "Davies-Bouldin", ""].map(h=>(
+                      <th key={h} style={{padding:"10px 14px",fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",textAlign:"left"}}>{h}</th>
+                    ))
+                    : isTimeSeries
+                    ? ["Model", "R²", "MAE", "MAPE"].map(h=>(
+                      <th key={h} style={{padding:"10px 14px",fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",textAlign:"left"}}>{h}</th>
+                    ))
+                    : ["Model", isReg?"R²":"Acc", isReg?"MAE":"F1", isReg?"RMSE":"AUC"].map(h=>(
                     <th key={h} style={{padding:"10px 14px",fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",textAlign:"left"}}>{h}</th>
                   ))}
                 </tr>
@@ -107,9 +161,9 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
                     <td style={{padding:"11px 14px",fontFamily:"Rajdhani, sans-serif",fontWeight:m.is_best?700:400,fontSize:14,color:m.is_best?"var(--cyan)":"var(--text-primary)"}}>
                       {m.model} {m.is_best&&<span style={{fontFamily:"Fira Code, monospace",fontSize:9,color:"var(--green)",border:"1px solid var(--green)",padding:"1px 4px",marginLeft:6}}>BEST</span>}
                     </td>
-                    <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isReg?m.r2:m.accuracy?`${(m.accuracy*100).toFixed(1)}%`:"—"}</td>
-                    <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isReg?m.mae:m.f1}</td>
-                    <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isReg?m.rmse:m.auc}</td>
+                    <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isClustering?m.silhouette:(isReg||isTimeSeries?m.r2:m.accuracy?`${(m.accuracy*100).toFixed(1)}%`:"—")}</td>
+                    <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isClustering?m.davies_bouldin:(isReg||isTimeSeries?m.mae:m.f1)}</td>
+                    <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isClustering?"":(isTimeSeries?m.mape:(isReg?m.rmse:m.auc))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -117,6 +171,7 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
           </CyberCard>
 
           {/* SHAP */}
+          {features.length > 0 && (
           <CyberCard noPad>
             <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border-faint)"}}>
               <p style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--purple)",letterSpacing:"0.14em",textTransform:"uppercase"}}>// SHAP Feature Importance</p>
@@ -140,6 +195,7 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
               })}
             </div>
           </CyberCard>
+          )}
         </div>
 
         {/* AI Insight */}

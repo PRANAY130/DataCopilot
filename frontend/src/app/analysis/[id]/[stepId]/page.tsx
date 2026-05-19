@@ -188,7 +188,7 @@ function TaskView({data,accent}:{data:any;accent:string}) {
   return (
     <div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:20}}>
-        {[["Task Type",data.task_type],["Target Column",data.target_col]].map(([l,v])=>(
+        {[["Task Type",data.task_type],["Target Column",data.target_col || "None (Clustering)"]].map(([l,v])=>(
           <Card key={l as string}><div style={{fontFamily:"Fira Code, monospace",fontSize:9,color:"var(--text-muted)",marginBottom:4}}>{l}</div>
           <div style={{fontFamily:"Orbitron, sans-serif",fontWeight:700,fontSize:15,color:accent}}>{v}</div></Card>
         ))}
@@ -268,28 +268,22 @@ function TrainView({data,accent,session}:{data:any;accent:string;session:any}) {
   // 1. data.logs  — persisted in the "done" event (always available for completed sessions)
   // 2. session.steps.train.data.logs — live-streaming during the run
   const logsSource = data.logs || session?.steps?.train?.data?.logs || {};
-  const logs: string[] = logsSource[tab] || [];
-
-  const MODELS = [
-    {id:"xgboost",name:"XGBoost"},
-    {id:"rf",name:"RandForest"},
-    {id:"logreg",name:"LogReg"},
-    {id:"linear",name:"Linear"},
-    {id:"svm",name:"SVM"},
-  ];
   const cv: Record<string,any> = data.cv_results || {};
-  const activeTabs = MODELS.filter(m => cv[m.id]);
+  const candidateModels = session?.steps?.recommend?.data?.models || [];
+  const activeTabs = candidateModels.filter((m:any) => cv[m.id] || logsSource[m.id]);
+  const currentTab = activeTabs.find((t:any) => t.id === tab) ? tab : activeTabs[0]?.id;
+  const currentLogs: string[] = logsSource[currentTab] || [];
 
   return (
     <div>
       {/* Model tabs — only show models that have CV results */}
       {activeTabs.length > 0 && (
         <div style={{display:"grid",gridTemplateColumns:`repeat(${activeTabs.length},1fr)`,gap:1,background:"var(--border-faint)",border:"1px solid var(--border-faint)",marginBottom:16}}>
-          {activeTabs.map(m => (
+          {activeTabs.map((m: any) => (
             <div key={m.id} onClick={()=>setTab(m.id)}
-              style={{padding:"10px",background:tab===m.id?"rgba(255,255,255,0.03)":"var(--bg-card)",borderBottom:tab===m.id?`2px solid ${accent}`:"2px solid transparent",textAlign:"center",cursor:"pointer"}}>
-              <div style={{fontFamily:"Rajdhani, sans-serif",fontWeight:700,fontSize:13,color:tab===m.id?"var(--text-bright)":"var(--text-muted)"}}>{m.name}</div>
-              <div style={{fontFamily:"Fira Code, monospace",fontSize:9,color:tab===m.id?accent:"var(--text-dim)"}}>{cv[m.id].mean}</div>
+              style={{padding:"10px",background:currentTab===m.id?"rgba(255,255,255,0.03)":"var(--bg-card)",borderBottom:currentTab===m.id?`2px solid ${accent}`:"2px solid transparent",textAlign:"center",cursor:"pointer"}}>
+              <div style={{fontFamily:"Rajdhani, sans-serif",fontWeight:700,fontSize:13,color:currentTab===m.id?"var(--text-bright)":"var(--text-muted)"}}>{m.name}</div>
+              <div style={{fontFamily:"Fira Code, monospace",fontSize:9,color:currentTab===m.id?accent:"var(--text-dim)"}}>{cv[m.id]?.mean || "..."}</div>
             </div>
           ))}
         </div>
@@ -297,16 +291,16 @@ function TrainView({data,accent,session}:{data:any;accent:string;session:any}) {
 
       {/* Log terminal */}
       <div style={{background:"#030308",border:"1px solid var(--border-dim)",padding:"16px 20px",height:260,overflowY:"auto",display:"flex",flexDirection:"column",gap:4}}>
-        {logs.length === 0 ? (
+        {currentLogs.length === 0 ? (
           // CV scores table fallback when logs not available
           activeTabs.length > 0 ? (
             <div style={{display:"flex",flexDirection:"column",gap:8,padding:"8px 0"}}>
               <div style={{fontFamily:"Fira Code, monospace",fontSize:10,color:accent,letterSpacing:"0.12em",marginBottom:8}}>// CROSS-VALIDATION RESULTS</div>
-              {activeTabs.map(m => {
-                const res = cv[m.id];
+              {activeTabs.map((m:any) => {
+                const res = cv[m.id] || {};
                 const folds: number[] = res.folds || [];
                 const mean: number = res.mean || 0;
-                const best = mean === Math.max(...activeTabs.map(x => cv[x.id]?.mean || 0));
+                const best = mean > 0 && mean === Math.max(...activeTabs.map((x:any) => cv[x.id]?.mean || 0));
                 return (
                   <div key={m.id} style={{borderBottom:"1px solid var(--border-faint)",paddingBottom:8}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
@@ -333,7 +327,7 @@ function TrainView({data,accent,session}:{data:any;accent:string;session:any}) {
             </div>
           )
         ) : (
-          logs.map((log:string,i:number) => (
+          currentLogs.map((log:string,i:number) => (
             <div key={i} style={{
               fontFamily:"Fira Code, monospace",fontSize:12,lineHeight:1.5,
               color: log.includes("✓") ? "var(--green)" :
@@ -351,17 +345,25 @@ function TrainView({data,accent,session}:{data:any;accent:string;session:any}) {
 
 function EvaluateView({data,accent}:{data:any;accent:string}) {
   const metrics:any[] = data.metrics||[];
-  const isReg = data.task_type==="Regression";
-  const cm:number[][] = data.confusion_matrix||[];
+  const isReg = data.task_type==="Regression" || data.task_type==="Time Series";
+  const isClustering = data.task_type==="Clustering";
+  const isTimeSeries = data.task_type==="Time Series";
+  const cmRaw:any[] = data.confusion_matrix||[];
+  const cm:number[][] = cmRaw.map((r: any) => r.row ? r.row : r);
   const fpr:number[] = data.roc_fpr||[];
   const tpr:number[] = data.roc_tpr||[];
+  
+  let headers = ["Model",isReg?"R²":"Accuracy",isReg?"MAE":"F1",isReg?"RMSE":"AUC"];
+  if(isClustering) headers = ["Model", "Silhouette Score", "Davies-Bouldin Index", ""];
+  if(isTimeSeries) headers = ["Model", "R²", "MAE", "MAPE"];
+
   return (
     <div>
       <div style={{overflowX:"auto",border:"1px solid var(--border-faint)",marginBottom:20}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"Fira Code, monospace",fontSize:11}}>
           <thead>
             <tr style={{borderBottom:"1px solid var(--border-dim)",background:"rgba(255,255,255,0.02)"}}>
-              {["Model",isReg?"R²":"Accuracy",isReg?"MAE":"F1",isReg?"RMSE":"AUC"].map(h=>(
+              {headers.map(h=>(
                 <th key={h} style={{padding:"10px 12px",color:accent,textAlign:"left"}}>{h}</th>
               ))}
             </tr>
@@ -372,9 +374,9 @@ function EvaluateView({data,accent}:{data:any;accent:string}) {
                 <td style={{padding:"10px 12px",color:m.is_best?"var(--green)":"var(--text-primary)",fontFamily:"Rajdhani, sans-serif",fontWeight:m.is_best?700:400}}>
                   {m.model} {m.is_best&&<span style={{fontSize:9,color:"var(--green)",border:"1px solid var(--green)",padding:"1px 4px",marginLeft:6}}>BEST</span>}
                 </td>
-                <td style={{padding:"10px 12px",color:"var(--text-primary)"}}>{isReg?m.r2:m.accuracy}</td>
-                <td style={{padding:"10px 12px",color:"var(--text-primary)"}}>{isReg?m.mae:m.f1}</td>
-                <td style={{padding:"10px 12px",color:"var(--text-primary)"}}>{isReg?m.rmse:m.auc}</td>
+                <td style={{padding:"10px 12px",color:"var(--text-primary)"}}>{isClustering?m.silhouette:(isReg?m.r2:m.accuracy)}</td>
+                <td style={{padding:"10px 12px",color:"var(--text-primary)"}}>{isClustering?m.davies_bouldin:(isReg?m.mae:m.f1)}</td>
+                <td style={{padding:"10px 12px",color:"var(--text-primary)"}}>{isClustering?"":(isTimeSeries?m.mape:(isReg?m.rmse:m.auc))}</td>
               </tr>
             ))}
           </tbody>
@@ -409,6 +411,9 @@ function EvaluateView({data,accent}:{data:any;accent:string}) {
 
 function ShapView({data,accent}:{data:any;accent:string}) {
   const features:any[] = data.features||[];
+  if (features.length === 0) {
+    return <div style={{color:"var(--text-muted)",fontFamily:"Fira Code, monospace",fontSize:12}}>SHAP is not applicable or no features found for this model.</div>;
+  }
   const maxVal = Math.max(...features.map((f:any)=>f.importance||0));
   return (
     <div>

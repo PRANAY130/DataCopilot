@@ -33,15 +33,41 @@ TARGET_HINTS = [
 
 # ── HELPER FUNCTIONS ───────────────────────────────────────────────────────────
 
-def detect_target_column(df: pd.DataFrame) -> str:
+TIME_HINTS = ["date", "time", "timestamp", "year", "month", "day"]
+
+def detect_time_column(df: pd.DataFrame) -> str | None:
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            return col
+    cols_lower = {c.lower(): c for c in df.columns}
+    for hint in TIME_HINTS:
+        for c_low, c in cols_lower.items():
+            if hint in c_low:
+                return c
+    return None
+
+def detect_target_column(df: pd.DataFrame) -> str | None:
     cols_lower = {c.lower(): c for c in df.columns}
     for hint in TARGET_HINTS:
         if hint in cols_lower:
             return cols_lower[hint]
+    
+    # Check for clustering: if no hints and multiple numeric columns
+    if len(df.columns) >= 2:
+        last_col = df.columns[-1]
+        if pd.api.types.is_float_dtype(df[last_col]):
+            return None
+            
     return df.columns[-1]
 
 
-def detect_task_type(df: pd.DataFrame, target_col: str) -> tuple[str, dict]:
+def detect_task_type(df: pd.DataFrame, target_col: str | None, time_col: str | None) -> tuple[str, dict]:
+    if target_col is None:
+        return "Clustering", {}
+        
+    if time_col is not None:
+        return "Time Series", {}
+
     target = df[target_col].dropna()
     n_unique = target.nunique()
 
@@ -127,16 +153,20 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
 
     # ── STEP 3: TASK DETECTION ─────────────────────────────────────────────────
     yield event("task", "running", {})
+    time_col = detect_time_column(df)
     target_col = detect_target_column(df)
-    task_type, class_counts = detect_task_type(df, target_col)
-    is_regression = task_type == "Regression"
+    task_type, class_counts = detect_task_type(df, target_col, time_col)
+    is_regression = task_type in ("Regression", "Time Series")
+    is_clustering = task_type == "Clustering"
+    is_time_series = task_type == "Time Series"
 
     yield event("task", "done", {
         "target_col": target_col,
+        "time_col": time_col,
         "task_type": task_type,
         "class_counts": class_counts,
         "is_imbalanced": (
-            False if is_regression else
+            False if (is_regression or is_clustering) else
             max(class_counts.values()) / sum(class_counts.values()) > 0.75
             if class_counts else False
         ),
@@ -243,20 +273,91 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     # ── STEP 5: MODEL SELECTION ────────────────────────────────────────────────
     yield event("recommend", "running", {})
 
-    from sklearn.linear_model import LogisticRegression, LinearRegression
-    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+    from sklearn.linear_model import LogisticRegression, LinearRegression, ElasticNet
+    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, GradientBoostingRegressor
+    from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+    from sklearn.neural_network import MLPClassifier, MLPRegressor
+    from sklearn.naive_bayes import GaussianNB
     from sklearn.svm import SVC, SVR
+    from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
     import xgboost as xgb
 
-    if is_regression:
+    if is_clustering:
+        candidate_models = [
+            {
+                "id": "kmeans",
+                "name": "K-Means Clustering",
+                "reason": "Fast, distance-based centroid clustering; best for spherical clusters",
+                "params": {"n_clusters": 3, "init": "k-means++"},
+                "model": KMeans(n_clusters=3, random_state=42),
+            },
+            {
+                "id": "dbscan",
+                "name": "DBSCAN",
+                "reason": "Density-based spatial clustering; finds arbitrarily shaped clusters and handles outliers",
+                "params": {"eps": 0.5, "min_samples": 5},
+                "model": DBSCAN(eps=0.5, min_samples=5),
+            },
+            {
+                "id": "agglomerative",
+                "name": "Hierarchical Clustering",
+                "reason": "Builds nested clusters iteratively; good for smaller datasets with hierarchical structure",
+                "params": {"n_clusters": 3, "linkage": "ward"},
+                "model": AgglomerativeClustering(n_clusters=3),
+            },
+        ]
+    elif is_time_series:
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+        from statsmodels.tsa.arima.model import ARIMA
+        
+        class StatsmodelsWrapper:
+            def __init__(self, model_class, **kwargs):
+                self.model_class = model_class
+                self.kwargs = kwargs
+                self.model_ = None
+            def fit(self, X, y):
+                if self.model_class == ARIMA:
+                    self.model_ = self.model_class(y, **self.kwargs).fit()
+                else:
+                    self.model_ = self.model_class(y, **self.kwargs).fit()
+                return self
+            def predict(self, X):
+                return self.model_.forecast(steps=len(X))
+            def score(self, X, y):
+                from sklearn.metrics import r2_score
+                return r2_score(y, self.predict(X))
+
+        candidate_models = [
+            {
+                "id": "ets",
+                "name": "Exponential Smoothing",
+                "reason": "Captures trend and seasonality patterns natively",
+                "params": {"trend": "add", "seasonal": None},
+                "model": StatsmodelsWrapper(ExponentialSmoothing, trend="add"),
+            },
+            {
+                "id": "arima",
+                "name": "ARIMA",
+                "reason": "Auto-regressive integrated moving average for stationary temporal patterns",
+                "params": {"order": (1, 1, 1)},
+                "model": StatsmodelsWrapper(ARIMA, order=(1, 1, 1)),
+            },
+            {
+                "id": "xgb_ts",
+                "name": "XGBoost Time Series",
+                "reason": "Gradient boosting adapted for sequence prediction",
+                "params": {"n_estimators": 100, "max_depth": 5},
+                "model": xgb.XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42),
+            },
+        ]
+    elif is_regression:
         candidate_models = [
             {
                 "id": "xgboost",
                 "name": "XGBoost Regressor",
                 "reason": "Gradient boosting excels at structured tabular regression with non-linear patterns",
                 "params": {"n_estimators": 100, "max_depth": 5, "learning_rate": 0.1},
-                "model": xgb.XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1,
-                                           random_state=42, verbosity=0),
+                "model": xgb.XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42, verbosity=0),
             },
             {
                 "id": "rf",
@@ -266,11 +367,32 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
                 "model": RandomForestRegressor(n_estimators=100, random_state=42),
             },
             {
-                "id": "linear",
-                "name": "Linear Regression",
-                "reason": "Interpretable baseline — good when features have linear relationships",
-                "params": {"fit_intercept": True},
-                "model": LinearRegression(),
+                "id": "gbr",
+                "name": "Gradient Boosting Regressor",
+                "reason": "Builds an additive model in a forward stage-wise fashion",
+                "params": {"n_estimators": 100, "learning_rate": 0.1},
+                "model": GradientBoostingRegressor(n_estimators=100, random_state=42),
+            },
+            {
+                "id": "knn",
+                "name": "K-Nearest Neighbors",
+                "reason": "Non-parametric method that relies on local feature similarity",
+                "params": {"n_neighbors": 5},
+                "model": KNeighborsRegressor(n_neighbors=5),
+            },
+            {
+                "id": "elasticnet",
+                "name": "ElasticNet Regression",
+                "reason": "Linear regression with combined L1 and L2 priors as regularizer",
+                "params": {"alpha": 1.0, "l1_ratio": 0.5},
+                "model": ElasticNet(random_state=42),
+            },
+            {
+                "id": "mlp",
+                "name": "Neural Network (MLP)",
+                "reason": "Multi-layer perceptron capable of learning complex non-linear functions",
+                "params": {"hidden_layer_sizes": (100,), "activation": "relu"},
+                "model": MLPRegressor(hidden_layer_sizes=(100,), max_iter=500, random_state=42),
             },
         ]
     else:
@@ -296,6 +418,20 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
                 "model": RandomForestClassifier(n_estimators=100, random_state=42),
             },
             {
+                "id": "gbc",
+                "name": "Gradient Boosting Classifier",
+                "reason": "Produces competitive, highly robust classification models",
+                "params": {"n_estimators": 100, "learning_rate": 0.1},
+                "model": GradientBoostingClassifier(n_estimators=100, random_state=42),
+            },
+            {
+                "id": "knn",
+                "name": "K-Nearest Neighbors",
+                "reason": "Classification based on the majority vote of the k nearest neighbors",
+                "params": {"n_neighbors": 5},
+                "model": KNeighborsClassifier(n_neighbors=5),
+            },
+            {
                 "id": "logreg",
                 "name": "Logistic Regression",
                 "reason": "Fast, interpretable baseline — ideal for linearly separable classes",
@@ -303,11 +439,18 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
                 "model": LogisticRegression(C=1.0, max_iter=500, random_state=42),
             },
             {
-                "id": "svm",
-                "name": "SVM Classifier",
-                "reason": "Effective in high-dimensional spaces via kernel trick",
-                "params": {"kernel": "rbf", "C": 1.0},
-                "model": SVC(kernel="rbf", C=1.0, probability=True, random_state=42),
+                "id": "nb",
+                "name": "Naive Bayes",
+                "reason": "Probabilistic classifier based on applying Bayes' theorem",
+                "params": {},
+                "model": GaussianNB(),
+            },
+            {
+                "id": "mlp",
+                "name": "Neural Network (MLP)",
+                "reason": "Learns non-linear models using backpropagation",
+                "params": {"hidden_layer_sizes": (100,), "activation": "relu"},
+                "model": MLPClassifier(hidden_layer_sizes=(100,), max_iter=500, random_state=42),
             },
         ]
 
@@ -319,72 +462,114 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     # ── STEP 6: MODEL TRAINING (streamed per fold) ─────────────────────────────
     yield event("train", "running", {})
 
-    from sklearn.model_selection import StratifiedKFold, KFold, cross_val_score
+    from sklearn.model_selection import StratifiedKFold, KFold, TimeSeriesSplit
+    from sklearn.metrics import silhouette_score
 
     X_arr = X.values.astype(np.float32)
-    y_arr = np.array(y)
+    y_arr = np.array(y) if not is_clustering else None
 
     # Limit folds for small datasets
-    n_splits = min(5, max(2, len(y_arr) // 30))
-    cv = KFold(n_splits=n_splits, shuffle=True, random_state=42) if is_regression else \
-         StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    n_splits = min(5, max(2, len(X_arr) // 30))
+    if is_time_series:
+        cv = TimeSeriesSplit(n_splits=n_splits)
+    elif is_regression:
+        cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    elif not is_clustering:
+        cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    else:
+        cv = None
 
     scoring = "r2" if is_regression else "accuracy"
+    if is_time_series: scoring = "r2"
+    if is_clustering: scoring = "silhouette"
+    
     cv_results = {}  # model_id -> list of fold scores
 
     for m_info in candidate_models:
         model = m_info["model"]
         fold_scores = []
-
-        # Manual fold iteration so we can yield per-fold logs
-        yield event("train", "log", {
-            "model_id": m_info["id"],
-            "model_name": m_info["name"],
-            "log": f"[{m_info['name']}] Starting {n_splits}-Fold Cross-Validation...",
-        })
-
-        for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X_arr, y_arr if not is_regression else None)):
-            X_train, X_val = X_arr[train_idx], X_arr[val_idx]
-            y_train, y_val = y_arr[train_idx], y_arr[val_idx]
-
-            model.fit(X_train, y_train)
-
-            if is_regression:
-                score = model.score(X_val, y_val)  # R²
-            else:
-                score = (model.predict(X_val) == y_val).mean()
-
-            score = round(float(score), 4)
-            fold_scores.append(score)
-
-            metric_label = "R²" if is_regression else "Accuracy"
+        
+        if is_clustering:
             yield event("train", "log", {
                 "model_id": m_info["id"],
                 "model_name": m_info["name"],
-                "log": f"[{m_info['name']}] Fold {fold_idx+1}/{n_splits} → CV {metric_label}: {score:.4f}",
+                "log": f"[{m_info['name']}] Fitting on full dataset...",
+            })
+            model.fit(X_arr)
+            labels = model.labels_ if hasattr(model, "labels_") else model.predict(X_arr)
+            score = silhouette_score(X_arr, labels) if len(np.unique(labels)) > 1 else 0
+            score = round(float(score), 4)
+            fold_scores.append(score)
+            mean_score = score
+            metric_label = "Silhouette Score"
+            
+            yield event("train", "log", {
+                "model_id": m_info["id"],
+                "model_name": m_info["name"],
+                "log": f"[{m_info['name']}] ✓ Complete. {metric_label}: {score:.4f}",
+            })
+        else:
+            yield event("train", "log", {
+                "model_id": m_info["id"],
+                "model_name": m_info["name"],
+                "log": f"[{m_info['name']}] Starting {n_splits}-Fold Cross-Validation...",
             })
 
-        mean_score = round(float(np.mean(fold_scores)), 4)
+            for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X_arr, y_arr if not is_regression and not is_time_series else None)):
+                X_train, X_val = X_arr[train_idx], X_arr[val_idx]
+                y_train, y_val = y_arr[train_idx], y_arr[val_idx]
+
+                model.fit(X_train, y_train)
+
+                if is_regression or is_time_series:
+                    try:
+                        score = model.score(X_val, y_val)  # R²
+                    except Exception:
+                        from sklearn.metrics import r2_score
+                        preds = model.predict(X_val)
+                        score = r2_score(y_val, preds)
+                else:
+                    score = (model.predict(X_val) == y_val).mean()
+
+                score = round(float(score), 4)
+                fold_scores.append(score)
+
+                metric_label = "R²" if (is_regression or is_time_series) else "Accuracy"
+                yield event("train", "log", {
+                    "model_id": m_info["id"],
+                    "model_name": m_info["name"],
+                    "log": f"[{m_info['name']}] Fold {fold_idx+1}/{n_splits} → CV {metric_label}: {score:.4f}",
+                })
+
+            mean_score = round(float(np.mean(fold_scores)), 4)
+            
+            yield event("train", "log", {
+                "model_id": m_info["id"],
+                "model_name": m_info["name"],
+                "log": f"[{m_info['name']}] ✓ Complete. Mean CV {metric_label}: {mean_score:.4f}",
+            })
+
         cv_results[m_info["id"]] = {"folds": fold_scores, "mean": mean_score}
 
-        yield event("train", "log", {
-            "model_id": m_info["id"],
-            "model_name": m_info["name"],
-            "log": f"[{m_info['name']}] ✓ Complete. Mean CV {metric_label}: {mean_score:.4f}",
-        })
-
     # Build summary log lines for persistence (mirrors what was streamed live)
-    metric_label = "R²" if is_regression else "Accuracy"
     summary_logs = {}
     for m_info in candidate_models:
         mid = m_info["id"]
         res = cv_results.get(mid, {})
         folds = res.get("folds", [])
         mean_s = res.get("mean", 0)
-        lines = [f"[{m_info['name']}] Ran {n_splits}-Fold Cross-Validation..."]
-        for i, score in enumerate(folds):
-            lines.append(f"[{m_info['name']}] Fold {i+1}/{n_splits} → CV {metric_label}: {score:.4f}")
-        lines.append(f"[{m_info['name']}] ✓ Complete. Mean CV {metric_label}: {mean_s:.4f}")
+        
+        if is_clustering:
+            metric_label = "Silhouette Score"
+            lines = [f"[{m_info['name']}] Fitting on full dataset...",
+                     f"[{m_info['name']}] ✓ Complete. {metric_label}: {mean_s:.4f}"]
+        else:
+            metric_label = "R²" if (is_regression or is_time_series) else "Accuracy"
+            lines = [f"[{m_info['name']}] Ran {n_splits}-Fold Cross-Validation..."]
+            for i, score in enumerate(folds):
+                lines.append(f"[{m_info['name']}] Fold {i+1}/{n_splits} → CV {metric_label}: {score:.4f}")
+            lines.append(f"[{m_info['name']}] ✓ Complete. Mean CV {metric_label}: {mean_s:.4f}")
+        
         summary_logs[mid] = lines
 
     yield event("train", "done", {"cv_results": cv_results, "logs": summary_logs})
@@ -396,13 +581,22 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import (
         accuracy_score, precision_score, recall_score, f1_score,
-        roc_auc_score, confusion_matrix, mean_absolute_error, r2_score, mean_squared_error
+        roc_auc_score, confusion_matrix, mean_absolute_error, r2_score, mean_squared_error,
+        mean_absolute_percentage_error, silhouette_score, davies_bouldin_score
     )
 
-    X_train_f, X_test_f, y_train_f, y_test_f = train_test_split(
-        X_arr, y_arr, test_size=0.2, random_state=42,
-        stratify=y_arr if not is_regression else None
-    )
+    if is_clustering:
+        X_train_f, X_test_f = X_arr, X_arr
+        y_train_f, y_test_f = None, None
+    elif is_time_series:
+        X_train_f, X_test_f, y_train_f, y_test_f = train_test_split(
+            X_arr, y_arr, test_size=0.2, shuffle=False
+        )
+    else:
+        X_train_f, X_test_f, y_train_f, y_test_f = train_test_split(
+            X_arr, y_arr, test_size=0.2, random_state=42,
+            stratify=y_arr if not is_regression else None
+        )
 
     # Select best model by CV score
     best_id = max(cv_results, key=lambda k: cv_results[k]["mean"])
@@ -411,51 +605,70 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     metrics = []
     for m_info in candidate_models:
         m = m_info["model"]
-        m.fit(X_train_f, y_train_f)
-        y_pred = m.predict(X_test_f)
-
-        if is_regression:
+        
+        if is_clustering:
+            m.fit(X_train_f)
+            labels = m.labels_ if hasattr(m, "labels_") else m.predict(X_train_f)
+            has_clusters = len(np.unique(labels)) > 1
             row = {
                 "model": m_info["name"],
                 "model_id": m_info["id"],
-                "r2": safe_float(r2_score(y_test_f, y_pred)),
-                "mae": safe_float(mean_absolute_error(y_test_f, y_pred)),
-                "rmse": safe_float(np.sqrt(mean_squared_error(y_test_f, y_pred))),
+                "silhouette": safe_float(silhouette_score(X_train_f, labels)) if has_clusters else 0,
+                "davies_bouldin": safe_float(davies_bouldin_score(X_train_f, labels)) if has_clusters else 0,
                 "is_best": m_info["id"] == best_id,
             }
         else:
-            avg = "binary" if len(np.unique(y_arr)) == 2 else "weighted"
-            try:
-                if hasattr(m, "predict_proba"):
-                    y_prob = m.predict_proba(X_test_f)
-                    auc = safe_float(roc_auc_score(
-                        y_test_f, y_prob if avg == "weighted" else y_prob[:, 1],
-                        multi_class="ovr" if avg == "weighted" else "raise",
-                    ))
-                else:
-                    auc = None
-            except Exception:
-                auc = None
+            m.fit(X_train_f, y_train_f)
+            y_pred = m.predict(X_test_f)
 
-            row = {
-                "model": m_info["name"],
-                "model_id": m_info["id"],
-                "accuracy": safe_float(accuracy_score(y_test_f, y_pred)),
-                "precision": safe_float(precision_score(y_test_f, y_pred, average=avg, zero_division=0)),
-                "recall": safe_float(recall_score(y_test_f, y_pred, average=avg, zero_division=0)),
-                "f1": safe_float(f1_score(y_test_f, y_pred, average=avg, zero_division=0)),
-                "auc": auc,
-                "is_best": m_info["id"] == best_id,
-            }
+            if is_time_series or is_regression:
+                try:
+                    mape = mean_absolute_percentage_error(y_test_f, y_pred)
+                except Exception:
+                    mape = None
+                
+                row = {
+                    "model": m_info["name"],
+                    "model_id": m_info["id"],
+                    "r2": safe_float(r2_score(y_test_f, y_pred)),
+                    "mae": safe_float(mean_absolute_error(y_test_f, y_pred)),
+                    "rmse": safe_float(np.sqrt(mean_squared_error(y_test_f, y_pred))),
+                    "mape": safe_float(mape) if is_time_series else None,
+                    "is_best": m_info["id"] == best_id,
+                }
+            else:
+                avg = "binary" if len(np.unique(y_arr)) == 2 else "weighted"
+                try:
+                    if hasattr(m, "predict_proba"):
+                        y_prob = m.predict_proba(X_test_f)
+                        auc = safe_float(roc_auc_score(
+                            y_test_f, y_prob if avg == "weighted" else y_prob[:, 1],
+                            multi_class="ovr" if avg == "weighted" else "raise",
+                        ))
+                    else:
+                        auc = None
+                except Exception:
+                    auc = None
+
+                row = {
+                    "model": m_info["name"],
+                    "model_id": m_info["id"],
+                    "accuracy": safe_float(accuracy_score(y_test_f, y_pred)),
+                    "precision": safe_float(precision_score(y_test_f, y_pred, average=avg, zero_division=0)),
+                    "recall": safe_float(recall_score(y_test_f, y_pred, average=avg, zero_division=0)),
+                    "f1": safe_float(f1_score(y_test_f, y_pred, average=avg, zero_division=0)),
+                    "auc": auc,
+                    "is_best": m_info["id"] == best_id,
+                }
         metrics.append(row)
 
     # Confusion matrix and ROC for best model (classification only)
     conf_matrix = []
     roc_fpr, roc_tpr = [], []
-    if not is_regression:
+    if not (is_regression or is_time_series or is_clustering):
         best_fitted = best_model_info["model"]
         cm = confusion_matrix(y_test_f, best_fitted.predict(X_test_f))
-        conf_matrix = cm.tolist()
+        conf_matrix = [{"row": r} for r in cm.tolist()]
 
         if len(np.unique(y_arr)) == 2 and hasattr(best_fitted, "predict_proba"):
             try:
@@ -480,52 +693,85 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     yield event("shap", "running", {})
 
     shap_features = []
-    try:
-        import shap as shap_lib
-        best_model = best_model_info["model"]
+    if not is_clustering:
+        try:
+            import shap as shap_lib
+            best_model = best_model_info["model"]
 
-        # Use a sample for speed on large datasets
-        sample_size = min(200, len(X_train_f))
-        X_sample = X_train_f[:sample_size]
+            # Use a sample for speed on large datasets
+            sample_size = min(200, len(X_train_f))
+            X_sample = X_train_f[:sample_size]
 
-        if best_id in ("xgboost", "rf"):
-            explainer = shap_lib.TreeExplainer(best_model)
-            shap_values = explainer.shap_values(X_sample)
-        else:
-            explainer = shap_lib.KernelExplainer(
-                best_model.predict_proba if hasattr(best_model, "predict_proba") else best_model.predict,
-                shap_lib.sample(X_sample, 50)
-            )
-            shap_values = explainer.shap_values(X_sample, nsamples=100)
+            shap_values = None
+            if best_id in ("xgboost", "rf", "gbc", "gbr"):
+                try:
+                    explainer = shap_lib.TreeExplainer(best_model)
+                    shap_values = explainer.shap_values(X_sample)
+                except Exception as tree_e:
+                    logger.warning(f"TreeExplainer failed: {tree_e}")
 
-        # Handle multi-class SHAP (list of arrays)
-        if isinstance(shap_values, list):
-            shap_arr = np.abs(np.array(shap_values)).mean(axis=0)
-        else:
-            shap_arr = np.abs(shap_values)
+            if shap_values is None:
+                # For any model, try KernelExplainer with a small background
+                try:
+                    bg = shap_lib.sample(X_sample, min(50, len(X_sample)))
+                    predict_fn = (
+                        best_model.predict_proba
+                        if hasattr(best_model, "predict_proba") and not is_regression
+                        else best_model.predict
+                    )
+                    explainer = shap_lib.KernelExplainer(predict_fn, bg)
+                    shap_values = explainer.shap_values(X_sample[:50], nsamples=50)
+                except Exception as ke:
+                    logger.warning(f"KernelExplainer failed: {ke}")
 
-        mean_shap = shap_arr.mean(axis=0) if shap_arr.ndim == 2 else shap_arr
+            if shap_values is not None:
+                # Handle multi-class SHAP (list of arrays)
+                if isinstance(shap_values, list):
+                    shap_arr = np.abs(np.array(shap_values)).mean(axis=0)
+                else:
+                    shap_arr = np.abs(shap_values)
 
-        feature_importance = [
-            {"name": feature_names[i], "importance": safe_float(mean_shap[i])}
-            for i in range(len(feature_names))
-        ]
-        feature_importance.sort(key=lambda x: x["importance"] or 0, reverse=True)
-        shap_features = feature_importance[:15]  # top 15 features
+                if shap_arr.ndim > 2:
+                    shap_arr = shap_arr.mean(axis=0)
+                mean_shap = shap_arr.mean(axis=0) if shap_arr.ndim == 2 else shap_arr
 
-    except Exception as e:
-        logger.warning(f"SHAP computation failed: {e}. Using model feature importances as fallback.")
-        # Fallback: use feature_importances_ if available
-        best_model = best_model_info["model"]
-        if hasattr(best_model, "feature_importances_"):
-            fi = best_model.feature_importances_
-            shap_features = sorted(
-                [{"name": feature_names[i], "importance": safe_float(float(fi[i]))} for i in range(len(fi))],
-                key=lambda x: x["importance"] or 0,
-                reverse=True
-            )[:15]
-        else:
-            shap_features = [{"name": n, "importance": None} for n in feature_names[:10]]
+                feature_importance = [
+                    {"name": feature_names[i], "importance": safe_float(float(mean_shap[i]))}
+                    for i in range(min(len(feature_names), len(mean_shap)))
+                ]
+                feature_importance.sort(key=lambda x: x["importance"] or 0, reverse=True)
+                shap_features = feature_importance[:15]  # top 15 features
+
+        except Exception as e:
+            logger.warning(f"SHAP computation failed entirely: {e}")
+
+        # Fallback 1: feature_importances_ (tree-based models)
+        if not shap_features:
+            best_model = best_model_info["model"]
+            if hasattr(best_model, "feature_importances_"):
+                fi = best_model.feature_importances_
+                shap_features = sorted(
+                    [{"name": feature_names[i], "importance": safe_float(float(fi[i]))} for i in range(min(len(feature_names), len(fi)))],
+                    key=lambda x: x["importance"] or 0,
+                    reverse=True
+                )[:15]
+
+        # Fallback 2: coef_ (linear models)
+        if not shap_features:
+            best_model = best_model_info["model"]
+            if hasattr(best_model, "coef_"):
+                coef = np.abs(np.array(best_model.coef_))
+                if coef.ndim > 1:
+                    coef = coef.mean(axis=0)  # multi-class: average across classes
+                shap_features = sorted(
+                    [{"name": feature_names[i], "importance": safe_float(float(coef[i]))} for i in range(min(len(feature_names), len(coef)))],
+                    key=lambda x: x["importance"] or 0,
+                    reverse=True
+                )[:15]
+
+        # Fallback 3: if still nothing, provide features with 0 importance
+        if not shap_features:
+            shap_features = [{"name": n, "importance": 0.0} for n in feature_names[:15]]
 
     yield event("shap", "done", {
         "features": shap_features,
@@ -550,8 +796,12 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     # Feature histograms for top 5 numeric features
     histograms = {}
     try:
-        top_num_cols = [f["name"] for f in shap_features if f["name"] in df_raw.columns
-                        and pd.api.types.is_numeric_dtype(df_raw[f["name"]])][:5]
+        if shap_features:
+            top_num_cols = [f["name"] for f in shap_features if f["name"] in df_raw.columns
+                            and pd.api.types.is_numeric_dtype(df_raw[f["name"]])][:5]
+        else:
+            top_num_cols = [c for c in df_raw.columns if pd.api.types.is_numeric_dtype(df_raw[c])][:5]
+            
         for col in top_num_cols:
             vals = df_raw[col].dropna()
             counts, bin_edges = np.histogram(vals, bins=20)
