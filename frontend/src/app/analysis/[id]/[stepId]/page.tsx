@@ -19,6 +19,17 @@ const STEPS_SEQUENCE = [
 
 type StepStatus = "pending" | "running" | "done" | "error";
 
+const getStepIndexFromElapsed = (elapsedVal: number): number => {
+  let cumulative = 0.6; // initial start delay
+  for (let i = 0; i < STEPS_SEQUENCE.length; i++) {
+    cumulative += STEPS_SEQUENCE[i].duration;
+    if (elapsedVal < cumulative) {
+      return i;
+    }
+  }
+  return STEPS_SEQUENCE.length;
+};
+
 export default function StepDetailPage({ params }: { params: Promise<{ id: string; stepId: string }> | any }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -27,7 +38,6 @@ export default function StepDetailPage({ params }: { params: Promise<{ id: strin
   const [stepId, setStepId] = useState<string>("");
   const [elapsed, setElapsed] = useState(0);
   const [done, setDone] = useState(false);
-  const [currentStep, setCurrentStep] = useState(-1);
 
   // Safely unwrap parameters
   useEffect(() => {
@@ -53,32 +63,22 @@ export default function StepDetailPage({ params }: { params: Promise<{ id: strin
     }
   }, [stepId, searchParams]);
 
-  // Sync currentStep progression based on elapsed time
-  useEffect(() => {
-    const idx = STEPS_SEQUENCE.findIndex(s => s.id === stepId);
-    setCurrentStep(idx >= 0 ? idx : 0);
-  }, [stepId]);
+  const currentStep = getStepIndexFromElapsed(elapsed);
 
   // Background timer (keeps running during inspect!)
   useEffect(() => {
     if (done) return;
-    const timer = setInterval(() => setElapsed((e) => e + 0.1), 100);
+    const timer = setInterval(() => {
+      setElapsed((e) => {
+        const next = e + 0.1;
+        if (next >= 15.5) {
+          setDone(true);
+        }
+        return next;
+      });
+    }, 100);
     return () => clearInterval(timer);
   }, [done]);
-
-  // Background step progress advancer (keeps running!)
-  useEffect(() => {
-    if (currentStep >= STEPS_SEQUENCE.length) {
-      setDone(true);
-      return;
-    }
-    const step = STEPS_SEQUENCE[currentStep];
-    const delay = step ? (step.duration ?? 1) * 1000 : 800;
-    const timer = setTimeout(() => {
-      setCurrentStep((s) => s + 1);
-    }, delay);
-    return () => clearTimeout(timer);
-  }, [currentStep]);
 
   const steps = STEPS_SEQUENCE.map((s, i) => ({
     ...s,
@@ -114,7 +114,7 @@ export default function StepDetailPage({ params }: { params: Promise<{ id: strin
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
               <span 
-                onClick={() => router.push(`/analysis/${sessionId}`)}
+                onClick={() => router.push(`/analysis/${sessionId}?elapsed=${elapsed.toFixed(1)}`)}
                 style={{ cursor: "pointer", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", textDecoration: "underline" }}
               >
                 &lt;- Back to Pipeline
@@ -130,7 +130,7 @@ export default function StepDetailPage({ params }: { params: Promise<{ id: strin
           </div>
 
           <div style={{ display: "flex", gap: 12 }}>
-            <NeonButton onClick={() => router.push(`/analysis/${sessionId}`)} variant="cyan" size="sm">
+            <NeonButton onClick={() => router.push(`/analysis/${sessionId}?elapsed=${elapsed.toFixed(1)}`)} variant="cyan" size="sm">
               Overview Dashboard
             </NeonButton>
             {done && (
