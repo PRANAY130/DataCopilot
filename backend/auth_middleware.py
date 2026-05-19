@@ -41,7 +41,7 @@ async def get_current_user(
         return decoded["uid"]
     except Exception as e:
         logger.warning(f"Token verification failed: {e}")
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise HTTPException(status_code=401, detail=f"Token verification failed: {str(e)}")
 
 
 async def get_current_user_ws(token: str | None) -> str:

@@ -154,30 +154,160 @@ function UploadView({data,accent}:{data:any;accent:string}) {
 function AnalyzeView({data,accent}:{data:any;accent:string}) {
   const cols:any[] = data.per_column||[];
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      <p style={{fontFamily:"Inter, sans-serif",fontSize:13,color:"var(--text-muted)",marginBottom:8}}>
+    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      <p style={{fontFamily:"Inter, sans-serif",fontSize:13,color:"var(--text-muted)",margin:0}}>
         Profiled {cols.length} columns · {data.duplicate_rows} duplicate rows detected.
       </p>
-      {cols.map((col:any)=>(
-        <Card key={col.name}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-            <span style={{fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-bright)",fontWeight:600}}>{col.name}</span>
-            <div style={{display:"flex",gap:8}}>
-              <span style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-dim)"}}>{col.dtype}</span>
-              <span style={{fontFamily:"Fira Code, monospace",fontSize:10,color:col.null_pct>0?"var(--amber)":"var(--green)"}}>
-                {col.null_pct}% null
-              </span>
-            </div>
+
+      {/* PCA Visualization Section */}
+      {data.pca_data && data.pca_data.points && data.pca_data.points.length > 0 && (
+        <Card style={{border:"1px solid var(--purple)",boxShadow:"0 0 20px rgba(191,0,255,0.05)",padding:20}}>
+          <h3 style={{fontFamily:"Orbitron, sans-serif",fontWeight:700,fontSize:14,color:"var(--purple)",marginBottom:6,letterSpacing:"0.05em"}}>
+            Principal Component Analysis (PCA) Projection
+          </h3>
+          <p style={{fontFamily:"Inter, sans-serif",fontSize:12,color:"var(--text-muted)",marginBottom:16,lineHeight:1.4}}>
+            Linear dimensionality reduction mapping the high-dimensional feature space down to 2 principal components. Explained variance ratio: {data.pca_data.explained_variance?.map((v: number) => `${(v * 100).toFixed(1)}%`).join(" + ")}.
+          </p>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",background:"rgba(0,0,0,0.3)",border:"1px solid var(--border-faint)",padding:20,borderRadius:4}}>
+            <svg width="100%" height="260" viewBox="0 0 450 260" style={{overflow:"visible"}}>
+              {/* Axes & Grid Lines */}
+              <line x1="45" y1="20" x2="45" y2="220" stroke="var(--border-dim)" strokeWidth="1"/>
+              <line x1="45" y1="220" x2="430" y2="220" stroke="var(--border-dim)" strokeWidth="1"/>
+              
+              <text x="237" y="248" fill="var(--text-muted)" textAnchor="middle" style={{fontFamily:"Fira Code, monospace",fontSize:9}}>PC1 (Principal Component 1)</text>
+              <text x="12" y="120" fill="var(--text-muted)" textAnchor="middle" transform="rotate(-90, 12, 120)" style={{fontFamily:"Fira Code, monospace",fontSize:9}}>PC2</text>
+
+              {(() => {
+                const points = data.pca_data.points || [];
+                const xs = points.map((p: any) => p.x);
+                const ys = points.map((p: any) => p.y);
+                const minX = Math.min(...xs, -1);
+                const maxX = Math.max(...xs, 1);
+                const minY = Math.min(...ys, -1);
+                const maxY = Math.max(...ys, 1);
+                
+                const scaleX = (x: number) => 45 + ((x - minX) / (maxX - minX || 1)) * 370;
+                const scaleY = (y: number) => 220 - ((y - minY) / (maxY - minY || 1)) * 190;
+
+                const labels = Array.from(new Set(points.map((p: any) => p.label).filter(Boolean))) as string[];
+                const colors = ["var(--cyan)", "var(--pink)", "var(--purple)", "var(--green)", "var(--amber)"];
+                const getLabelColor = (lbl: string) => {
+                  const idx = labels.indexOf(lbl);
+                  return idx >= 0 ? colors[idx % colors.length] : "var(--cyan)";
+                };
+
+                return (
+                  <>
+                    {points.map((pt: any, idx: number) => (
+                      <circle
+                        key={idx}
+                        cx={scaleX(pt.x)}
+                        cy={scaleY(pt.y)}
+                        r="3.5"
+                        fill={pt.label ? getLabelColor(pt.label) : "var(--cyan)"}
+                        opacity="0.75"
+                        style={{ transition: "all 0.2s" }}
+                      >
+                        <title>{`PC1: ${pt.x}\nPC2: ${pt.y}${pt.label ? `\nTarget Class: ${pt.label}` : ""}`}</title>
+                      </circle>
+                    ))}
+                    {/* Legend */}
+                    {labels.length > 0 && (
+                      <g transform="translate(50, 12)">
+                        {labels.slice(0, 5).map((lbl: string, idx: number) => (
+                          <g key={lbl} transform={`translate(${idx * 75}, 0)`}>
+                            <circle cx="0" cy="0" r="4.5" fill={colors[idx % colors.length]}/>
+                            <text x="8" y="3" fill="var(--text-muted)" style={{fontFamily:"Fira Code, monospace",fontSize:8.5,fontWeight:500}}>{String(lbl).slice(0, 10)}</text>
+                          </g>
+                        ))}
+                      </g>
+                    )}
+                  </>
+                );
+              })()}
+            </svg>
           </div>
-          {col.null_pct>0 && (
-            <div style={{height:4,background:"#050510",borderRadius:2}}>
-              <div style={{height:"100%",width:`${Math.min(col.null_pct,100)}%`,background:col.null_pct>50?"var(--pink)":"var(--amber)",borderRadius:2}}/>
-            </div>
-          )}
-          {col.min!=null && <div style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",marginTop:4}}>min: {col.min} · max: {col.max} · mean: {col.mean}</div>}
-          {col.top_values && <div style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",marginTop:4}}>{Object.entries(col.top_values).slice(0,3).map(([k,v])=>`${k}(${v})`).join(" · ")}</div>}
         </Card>
-      ))}
+      )}
+
+      {/* Columns Profile List */}
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {cols.map((col:any)=>(
+          <Card key={col.name}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,alignItems:"center"}}>
+              <span style={{fontFamily:"Fira Code, monospace",fontSize:13,color:"var(--text-bright)",fontWeight:600}}>{col.name}</span>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <span style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-dim)",border:"1px solid var(--border-faint)",padding:"2px 6px"}}>{col.dtype}</span>
+                <span style={{fontFamily:"Fira Code, monospace",fontSize:10,color:col.null_pct>0?"var(--amber)":"var(--green)",fontWeight:500}}>
+                  {col.null_pct}% null ({col.nulls})
+                </span>
+                {col.outliers_count > 0 && (
+                  <span style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--pink)",border:"1px solid rgba(255,0,102,0.2)",padding:"2px 6px",background:"rgba(255,0,102,0.03)"}}>
+                    ⚠️ {col.outliers_count} outliers ({col.outliers_pct}%)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {col.null_pct>0 && (
+              <div style={{height:4,background:"#050510",borderRadius:2,marginBottom:8}}>
+                <div style={{height:"100%",width:`${Math.min(col.null_pct,100)}%`,background:col.null_pct>50?"var(--pink)":"var(--amber)",borderRadius:2}}/>
+              </div>
+            )}
+
+            {col.min!=null && (
+              <div style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",marginTop:6,marginBottom:10}}>
+                min: <span style={{color:"var(--text-primary)"}}>{col.min}</span> · max: <span style={{color:"var(--text-primary)"}}>{col.max}</span> · mean: <span style={{color:"var(--text-primary)"}}>{col.mean}</span> · std: <span style={{color:"var(--text-primary)"}}>{col.std}</span>
+              </div>
+            )}
+
+            {/* Histogram (EDA graph) for numeric columns */}
+            {col.histogram && col.histogram.counts && (
+              <div style={{marginTop:10,marginBottom:8}}>
+                <p style={{fontFamily:"Fira Code, monospace",fontSize:9,color:"var(--text-dim)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>// Distribution Histogram</p>
+                <div style={{display:"flex",alignItems:"flex-end",height:60,background:"rgba(0,0,0,0.15)",border:"1px solid var(--border-faint)",padding:"4px 8px",gap:2}}>
+                  {(() => {
+                    const counts: number[] = col.histogram.counts;
+                    const maxVal = Math.max(...counts, 1);
+                    return counts.map((c: number, idx: number) => {
+                      const pct = (c / maxVal) * 100;
+                      return (
+                        <div key={idx} style={{flex:1,height:"100%",display:"flex",alignItems:"flex-end"}} title={`Frequency: ${c}`}>
+                          <div style={{width:"100%",height:`${Math.max(pct, 2)}%`,background:"var(--cyan)",opacity:0.7,borderRadius:"1px 1px 0 0",boxShadow:"0 0 4px rgba(0,245,255,0.2)"}}/>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Categorical Distribution Frequency chart */}
+            {col.top_values && (
+              <div style={{marginTop:10,marginBottom:6}}>
+                <p style={{fontFamily:"Fira Code, monospace",fontSize:9,color:"var(--text-dim)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>// Value Distribution Frequency</p>
+                <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                  {Object.entries(col.top_values).map(([k, v]: any, idx: number) => {
+                    const total = Object.values(col.top_values).reduce((a: any, b: any) => a + b, 0) as number;
+                    const pct = total > 0 ? (v / total) * 100 : 0;
+                    const colors = ["var(--cyan)", "var(--purple)", "var(--pink)", "var(--green)", "var(--amber)"];
+                    const c = colors[idx % colors.length];
+                    return (
+                      <div key={k} style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontFamily:"Fira Code, monospace",fontSize:11,color:"var(--text-primary)",width:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</span>
+                        <div style={{flex:1,height:6,background:"rgba(255,255,255,0.02)",borderRadius:3,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${pct}%`,background:c,boxShadow:`0 0 6px ${c}60`}}/>
+                        </div>
+                        <span style={{fontFamily:"Fira Code, monospace",fontSize:10,color:c,width:50,textAlign:"right"}}>{v} ({Math.round(pct)}%)</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -187,12 +317,20 @@ function TaskView({data,accent}:{data:any;accent:string}) {
   const total = Object.values(counts).reduce((a:any,b:any)=>a+b,0) as number;
   return (
     <div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:16}}>
         {[["Task Type",data.task_type],["Target Column",data.target_col || "None (Clustering)"]].map(([l,v])=>(
           <Card key={l as string}><div style={{fontFamily:"Fira Code, monospace",fontSize:9,color:"var(--text-muted)",marginBottom:4}}>{l}</div>
           <div style={{fontFamily:"Orbitron, sans-serif",fontWeight:700,fontSize:15,color:accent}}>{v}</div></Card>
         ))}
       </div>
+
+      {data.reason && (
+        <Card style={{marginBottom:20,border:`1px solid rgba(255,255,255,0.08)`,background:"rgba(255,255,255,0.015)",padding:16}}>
+          <p style={{fontFamily:"Fira Code, monospace",fontSize:9,color:accent,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:6,fontWeight:600}}>TASK DETECTION RATIONALE</p>
+          <p style={{fontFamily:"Inter, sans-serif",fontSize:13,color:"var(--text-primary)",lineHeight:1.5,margin:0}}>{data.reason}</p>
+        </Card>
+      )}
+
       {Object.keys(counts).length>0 && (
         <div>
           <p style={{fontFamily:"Fira Code, monospace",fontSize:10,color:accent,letterSpacing:"0.12em",marginBottom:12}}>CLASS DISTRIBUTION</p>

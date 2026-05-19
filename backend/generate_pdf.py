@@ -74,7 +74,7 @@ class NumberedCanvas(canvas.Canvas):
         
         self.restoreState()
 
-# Custom flowable or page callback to track where things break
+# Page callback to track where things break
 def page_callback(canvas, doc):
     print(f"Page callback: completed page {doc.page}")
 
@@ -82,7 +82,7 @@ def build_pdf():
     pdf_filename = "../DataCopilot_Submission.pdf"
     
     # 8.5 x 11 inches: Width = 612, Height = 792. Margins = 54 (0.75 in).
-    # Setting top and bottom margin slightly smaller (60 pt) to prevent overflow
+    # Setting top and bottom margin to 60 pt to prevent overflow and keep layout clean
     doc = SimpleDocTemplate(
         pdf_filename,
         pagesize=letter,
@@ -103,7 +103,7 @@ def build_pdf():
         leading=26,
         textColor=PRIMARY_COLOR,
         alignment=1, # Center
-        spaceAfter=8
+        spaceAfter=6
     )
     
     subtitle_style = ParagraphStyle(
@@ -114,18 +114,18 @@ def build_pdf():
         leading=14,
         textColor=SECONDARY_COLOR,
         alignment=1, # Center
-        spaceAfter=20
+        spaceAfter=16
     )
     
     h1_style = ParagraphStyle(
         'SectionH1',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=13.5,
-        leading=17,
+        fontSize=13,
+        leading=16,
         textColor=PRIMARY_COLOR,
         spaceBefore=10,
-        spaceAfter=6,
+        spaceAfter=5,
         keepWithNext=True
     )
     
@@ -133,8 +133,8 @@ def build_pdf():
         'SectionH2',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=10,
-        leading=13,
+        fontSize=9.5,
+        leading=12,
         textColor=ACCENT_COLOR,
         spaceBefore=6,
         spaceAfter=3,
@@ -146,7 +146,7 @@ def build_pdf():
         parent=styles['Normal'],
         fontName='Helvetica',
         fontSize=8.5,
-        leading=12.5,
+        leading=12,
         textColor=TEXT_DARK,
         spaceAfter=4
     )
@@ -154,8 +154,16 @@ def build_pdf():
     bullet_style = ParagraphStyle(
         'BulletText',
         parent=body_style,
-        leftIndent=12,
-        bulletIndent=4,
+        leftIndent=15,
+        firstLineIndent=-10,
+        spaceAfter=3
+    )
+    
+    numbered_style = ParagraphStyle(
+        'NumberedText',
+        parent=body_style,
+        leftIndent=15,
+        firstLineIndent=-10,
         spaceAfter=3
     )
     
@@ -187,7 +195,7 @@ def build_pdf():
         parent=styles['Normal'],
         fontName='Helvetica',
         fontSize=7.5,
-        leading=10,
+        leading=9.5,
         textColor=TEXT_DARK
     )
 
@@ -212,18 +220,19 @@ def build_pdf():
     story.append(Paragraph("DATACOPILOT", title_style))
     story.append(Paragraph("AI-Driven AutoML & Conversational Insights Engine", subtitle_style))
     
-    # Accent metadata block table
+    # Accent metadata block table (Callout-style with vertical accent bar)
     meta_data = [
         [Paragraph("<b>Submitted For:</b> ABB Technical Challenge", body_style),
          Paragraph("<b>Date:</b> May 20, 2026", body_style)],
         [Paragraph("<b>Evaluation Focus:</b> Innovation, Technical Implementation, Industrial Relevance, Scalability & Robustness", body_style),
-         Paragraph("<b>Scope:</b> End-to-End AutoML Lifecycle", body_style)]
+         Paragraph("<b>Scope:</b> End-to-End Firebase-Firestore Integrated AutoML Lifecycle", body_style)]
     ]
     meta_table = Table(meta_data, colWidths=[260, 244])
     meta_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,-1), BG_LIGHT),
         ('PADDING', (0,0), (-1,-1), 5),
         ('BOX', (0,0), (-1,-1), 0.5, BORDER_COLOR),
+        ('LINEBEFORE', (0,0), (0,-1), 3.0, ACCENT_COLOR), # Bold Teal vertical line on left
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(meta_table)
@@ -231,34 +240,34 @@ def build_pdf():
     
     story.append(Paragraph("1. Executive Summary", h1_style))
     story.append(Paragraph(
-        "DataCopilot is a production-ready Automated Machine Learning (AutoML) platform that automates "
-        "the entire data science pipeline—from raw data ingestion to interactive, explainable model deployment. "
-        "Unlike black-box AutoML tools, DataCopilot combines high-fidelity statistical evaluations with "
-        "state-of-the-art SHAP (SHapley Additive exPlanations) values and an LLM-driven Chat Copilot, "
-        "enabling domain experts to train, evaluate, visualize, and query complex machine learning models "
-        "using natural language. The architecture is split into a robust FastAPI backend running parallel "
-        "async task workers and a high-performance Next.js frontend with dark-mode analytics dashboards.",
+        "DataCopilot is a production-ready, full-stack Automated Machine Learning (AutoML) platform that bridges "
+        "high-fidelity statistical modeling with explainable AI and conversational natural language querying. "
+        "Built on a serverless, document-oriented architecture, DataCopilot verifies user identity via Google "
+        "Sign-In, stores per-user sessions in Google Cloud Firestore, executes parallel model training workflows "
+        "locally on FastAPI background threads, and streams step-by-step progress directly to a Next.js front-end "
+        "using real-time WebSockets. This setup removes architectural complexity (no SQL database is required) "
+        "while providing stateful, multi-user workspace isolation.",
         body_style
     ))
     
     story.append(Paragraph("2. Inputs Considered", h1_style))
     story.append(Paragraph(
-        "The DataCopilot system is engineered to handle multiple categories of inputs. These represent the "
-        "starting parameters required to run the automated pipeline and initialize the intelligence modules.",
+        "The DataCopilot pipeline accepts specific data, system config, and credential files "
+        "to run the automated workflow and secure downstream user transactions:",
         body_style
     ))
     
     story.append(Paragraph("2.1 Data and Schema Inputs", h2_style))
-    story.append(Paragraph("• <b>File Formats:</b> Structured tabular datasets in standard comma-separated (<code>.csv</code>) or JavaScript Object Notation (<code>.json</code>) files.", bullet_style))
-    story.append(Paragraph("• <b>Schema Dimensions:</b> Arbitrary row count ($N$) and feature column count ($D$). Features can consist of mixed types (integers, floats, objects, booleans, timestamps).", bullet_style))
-    story.append(Paragraph("• <b>Target Variable Inference:</b> The target column can be specified by the user or automatically inferred by mapping headers against semantic target hints (e.g., <i>survived, target, label, class, price, churn</i>).", bullet_style))
-    story.append(Paragraph("• <b>Temporal Columns:</b> Date/time features, identified automatically by scanning columns for datetime data types or headers matching temporal keywords (e.g., <i>date, time, timestamp, year</i>).", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Structured Tabular Datasets:</b> Standard Comma-Separated (<code>.csv</code>) or JavaScript Object Notation (<code>.json</code>) files uploaded via multipart POST requests.", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Schema Properties:</b> User-defined target column headers, or an inferred target keyword parsed from raw headers (e.g. <i>target, label, class, price, churn</i>).", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Temporal Columns:</b> Date/time columns detected automatically by scanning columns for datetime types or headers matching temporal keywords (e.g. <i>date, time, timestamp</i>).", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>User Session UUID:</b> Unique identifiers generated per dataset upload to organize Firestore records and segment workspace cache directories.", bullet_style))
     
-    story.append(Paragraph("2.2 System & Operational Inputs", h2_style))
-    story.append(Paragraph("• <b>Secure Key Store:</b> Firebase Admin Service Account credentials (<code>serviceAccountKey.json</code>) used to authenticate database operations with the Firestore DB.", bullet_style))
-    story.append(Paragraph("• <b>Language Model APIs:</b> Client-side connection parameters and API keys for Google Gemini Pro (via <code>google-genai</code>) and Groq (Llama-3 models) to generate natural language explanations and handle user chat queries.", bullet_style))
-    story.append(Paragraph("• <b>Workspace Directories:</b> A dedicated local workspace path (<code>./workspace/uploads</code>) on the backend server acts as a secure, sandboxed cache directory for active dataset sessions.", bullet_style))
-    story.append(Paragraph("• <b>HTTP Header Configs:</b> Allowed CORS origins loaded from environment variables (<code>.env</code>) to restrict or permit connections from authorized frontend hosts.", bullet_style))
+    story.append(Paragraph("2.2 Authentication, Credentials & System Configs", h2_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Firebase Admin Key Store:</b> Private JSON service account certificate (<code>serviceAccountKey.json</code>) loaded on the server to authenticate and authorize Firestore operations.", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Bearer Token Header:</b> A cryptographically signed Firebase ID token (JWT) passed in the HTTP header (<code>Authorization: Bearer &lt;token&gt;</code>) to authorize protected REST/WS endpoints.", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Language Model API Keys:</b> Private keys for Google Gemini Pro (main reasoning agent) and Groq Llama-3-70b (failover engine) stored in server-side <code>.env</code> configurations.", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Firebase Client Environment Variables:</b> Web API configuration details (<code>apiKey</code>, <code>authDomain</code>, <code>projectId</code>) used to initialize client-side Google Sign-In.", bullet_style))
     
     story.append(PageBreak())
 
@@ -275,12 +284,12 @@ def build_pdf():
     
     # Ingestion diagram table
     flow_data = [
-        [Paragraph("<b>Step 1: Upload</b>", table_header_style), 
-         Paragraph("<b>Step 2: Profile</b>", table_header_style), 
-         Paragraph("<b>Step 3: Task Detect</b>", table_header_style)],
-        [Paragraph("FastAPI endpoints validate and store raw uploads in a local secure sandbox. Establishes a Firestore session state.", table_body_style),
-         Paragraph("Computes null ratios, data types, duplicate rows, numeric stats, and categorical frequencies.", table_body_style),
-         Paragraph("Auto-detects target, temporal indices, class distributions, and evaluates class imbalance ratios.", table_body_style)]
+        [Paragraph("<b>Step 1: Upload & Auth</b>", table_header_style), 
+         Paragraph("<b>Step 2: Profile & Stats</b>", table_header_style), 
+         Paragraph("<b>Step 3: Task & Imbalance</b>", table_header_style)],
+        [Paragraph("FastAPI intercepts and verifies Bearer JWT tokens via Firebase Admin. Saves files and creates Firestore doc: <code>users/{uid}/sessions/{session_id}</code>.", table_body_style),
+         Paragraph("Loads file in Pandas to compute null ratios, categorical frequencies, duplicate counts, and descriptive numeric distributions.", table_body_style),
+         Paragraph("Detects target and temporal columns; infers ML task type (Classification vs. Regression vs. Clustering). Flags class imbalance (>75%).", table_body_style)]
     ]
     flow_table = Table(flow_data, colWidths=[168, 168, 168])
     flow_table.setStyle(TableStyle([
@@ -295,36 +304,35 @@ def build_pdf():
     story.append(flow_table)
     story.append(Spacer(1, 6))
 
-    story.append(Paragraph("Phase 1: Ingestion & Upload Management", h2_style))
+    story.append(Paragraph("Phase 1: Ingestion & Firebase Authentication Gate", h2_style))
     story.append(Paragraph(
-        "When a client triggers file upload, the FastAPI server accepts the multipart file stream "
-        "and restricts payloads based on file extensions. A unique UUID session ID is generated, "
-        "representing the stateful record. The raw file is saved to the workspace, and a new session "
-        "document is registered in Firestore. This step handles server-side storage and initiates "
-        "the WebSocket connection for streaming pipeline progress.",
+        "Every protected request is intercepted by FastAPI middleware (<code>auth_middleware.py</code>), "
+        "which extracts the Bearer token and verifies it against the Firebase Admin SDK, yielding the user's "
+        "unique <code>uid</code>. The endpoint saves the raw file to <code>backend/workspace/uploads/</code> "
+        "and creates a stateful session record in Firestore. This architecture links database ownership to the "
+        "authenticated user. A WebSocket endpoint is established (<code>ws/analysis/{session_id}</code>) to stream "
+        "subsequent task outputs in real-time.",
         body_style
     ))
     
     story.append(Paragraph("Phase 2: Comprehensive Profiling & Diagnostics", h2_style))
     story.append(Paragraph(
-        "Once written, the ingestion worker loads the file into memory using Pandas. It loops through all "
-        "columns to generate a rich data profile dictionary. For every column, it calculates: (1) Missing "
-        "value counts and percentage ratios, (2) native pandas data types, (3) summary statistics (mean, "
-        "min, max, std) for numerical variables, and (4) value distributions (top 5 frequencies) for categorical "
-        "variables. It also identifies duplicate records. This profile is serialized and returned to the client "
-        "to drive visual dataset summaries.",
+        "Once files are saved, a background worker loads the dataset using Pandas. It computes missing "
+        "value ratios, duplicates, data types, and core statistics (mean, standard deviation, and quantiles "
+        "for numeric columns; top-5 category distributions for objects). The resulting profile metadata is "
+        "serialized, saved to the Firestore session record, and emitted via WebSocket to drive the frontend UI.",
         body_style
     ))
     
     story.append(Paragraph("Phase 3: Task Classification & Imbalance Engineering", h2_style))
     story.append(Paragraph(
-        "A critical phase is automated machine learning task classification, which occurs without user intervention:",
+        "DataCopilot determines the machine learning objective through automated classification heuristics:",
         body_style
     ))
-    story.append(Paragraph("1. <b>Target Search:</b> The system scans column names against a predefined list of common target keywords (e.g. <i>target, label, class, y, churn</i>). If no matches are found, the last column is selected as the target.", bullet_style))
-    story.append(Paragraph("2. <b>Temporal Scanning:</b> The system scans column names for date/time keywords. If a temporal column is detected, it registers the dataset as time-series oriented.", bullet_style))
-    story.append(Paragraph("3. <b>Task Assignment:</b> If the target column is missing, the system assigns a <b>Clustering</b> task. If a temporal column is present, it assigns a <b>Time Series</b> task. For other cases, it checks the target data type: if it is numeric and contains more than 15 unique values, it assigns <b>Regression</b>; otherwise, it counts the classes—assigning <b>Binary Classification</b> for exactly 2 classes, and <b>Multi-class Classification</b> for more.", bullet_style))
-    story.append(Paragraph("4. <b>Imbalance Diagnostic:</b> For classification tasks, it computes class frequency ratios. If the majority class represents over 75% of the samples, the <code>is_imbalanced</code> flag is set to true, triggering warnings in the user dashboard.", bullet_style))
+    story.append(Paragraph("1.&nbsp;&nbsp;<b>Target Auto-Detection:</b> The system scans column names for target keywords. If none are found and no target is selected, it defaults to an unsupervised <b>Clustering</b> task.", numbered_style))
+    story.append(Paragraph("2.&nbsp;&nbsp;<b>Temporal Detection:</b> Scanning for date/time keywords flags the session for <b>Time Series</b> forecasting.", numbered_style))
+    story.append(Paragraph("3.&nbsp;&nbsp;<b>Task Selection:</b> For standard supervised datasets, the system checks target cardinality. Numeric targets with &gt; 15 unique values are classified as <b>Regression</b>; target values with &le; 15 values are classified as <b>Binary</b> or <b>Multi-class Classification</b>.", numbered_style))
+    story.append(Paragraph("4.&nbsp;&nbsp;<b>Imbalance Checks:</b> For classification tasks, the system computes the majority class ratio. If any single class represents &gt; 75% of the dataset, it sets an <code>is_imbalanced</code> flag, which triggers class-weight balancing configurations in downstream training.", numbered_style))
     
     story.append(PageBreak())
 
@@ -341,11 +349,11 @@ def build_pdf():
     # Preprocessing diagram table
     preprocess_data = [
         [Paragraph("<b>Step 4: Preprocessing</b>", table_header_style), 
-         Paragraph("<b>Step 5: Recommend</b>", table_header_style), 
-         Paragraph("<b>Step 6: Train (CV)</b>", table_header_style)],
-        [Paragraph("Drops high-null columns (>75%). Imputes numericals (median) and categoricals (mode). Encodes categories and standardizes numericals.", table_body_style),
-         Paragraph("Initializes a list of candidate algorithms with parameters custom-tailored to the detected task.", table_body_style),
-         Paragraph("Runs K-Fold, Stratified K-Fold, or Time Series Split. Streams training logs fold-by-fold via WebSockets.", table_body_style)]
+         Paragraph("<b>Step 5: Recommend Models</b>", table_header_style), 
+         Paragraph("<b>Step 6: Threaded CV Train</b>", table_header_style)],
+        [Paragraph("Prunes sparse columns (>75% null). Imputes median/mode, encodes categories, and scales features via StandardScaler.", table_body_style),
+         Paragraph("Recommends a list of candidate algorithms (XGBoost, RandomForest, MLP) custom-suited to the detected task.", table_body_style),
+         Paragraph("Runs Stratified K-Fold or Time Series splits locally on server CPU threads. Streams progress updates fold-by-fold.", table_body_style)]
     ]
     preprocess_table = Table(preprocess_data, colWidths=[168, 168, 168])
     preprocess_table.setStyle(TableStyle([
@@ -360,33 +368,30 @@ def build_pdf():
     story.append(preprocess_table)
     story.append(Spacer(1, 6))
 
-    story.append(Paragraph("Phase 4: Automated Feature Preprocessing & Transformation", h2_style))
+    story.append(Paragraph("Phase 4: Automated Preprocessing & Feature Engineering", h2_style))
     story.append(Paragraph(
-        "Data preprocessing is applied sequentially to separate features (X) and target (y):",
+        "To prepare raw tabular features for scikit-learn and XGBoost pipelines, the engine applies transformations:",
         body_style
     ))
-    story.append(Paragraph("• <b>High-Sparsity Pruning:</b> Features with more than 75% missing values are dropped automatically.", bullet_style))
-    story.append(Paragraph("• <b>Imputation:</b> Missing values in numeric columns are filled with their respective column's median. Missing values in categorical columns are filled with their column's mode. The exact details (value, count) are recorded.", bullet_style))
-    story.append(Paragraph("• <b>Categorical Encoding:</b> High-cardinality categorical columns (>10 unique values) are Label Encoded. Low-cardinality categorical columns (<=10 unique values) are One-Hot Encoded into binary dummy columns, balancing feature dimensions.", bullet_style))
-    story.append(Paragraph("• <b>Feature Standardization:</b> Numeric columns are standardized to zero mean and unit variance using Scikit-Learn's <code>StandardScaler</code>.", bullet_style))
-    story.append(Paragraph("• <b>Target Variable Transformation:</b> For classification tasks, the target column is encoded via <code>LabelEncoder</code>. For regression, it is converted to numeric and missing entries are imputed with the median.", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Column Pruning:</b> Columns with more than 75% missing data are pruned to reduce feature noise.", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Imputation:</b> Missing continuous values are imputed with column medians; missing categorical variables are imputed with column modes. Imputation constants are cached for inference reproducibility.", bullet_style))
+    story.append(Paragraph("&bull;&nbsp;&nbsp;<b>Feature Encoding:</b> Continuous variables are standardized (zero mean, unit variance) via <code>StandardScaler</code>. Categorical variables are One-Hot Encoded if they have &le; 10 unique levels; otherwise, they are Label Encoded.", bullet_style))
     
     story.append(Paragraph("Phase 5: Candidate Model Recommendations", h2_style))
     story.append(Paragraph(
-        "Rather than training a single model, DataCopilot recommends a list of models from Scikit-Learn and XGBoost, "
-        "providing a clear technical justification for each. The model search space is customized based on the task type:",
+        "Instead of training a single model, DataCopilot defines a tailored search space based on the inferred task, "
+        "recommending candidate architectures with detailed technical parameters:",
         body_style
     ))
     
     # Table of models
     model_rows = [
-        [Paragraph("<b>Task Type</b>", table_header_style), Paragraph("<b>Candidate Algorithms Included</b>", table_header_style)],
-        [Paragraph("Classification", table_body_style), Paragraph("XGBoost Classifier, Random Forest, Gradient Boosting, Logistic Regression, Naive Bayes, Neural Network (MLP), K-Nearest Neighbors (KNN)", table_body_style)],
-        [Paragraph("Regression", table_body_style), Paragraph("XGBoost Regressor, Random Forest Regressor, Gradient Boosting Regressor, KNN, ElasticNet, MLP Neural Network", table_body_style)],
-        [Paragraph("Clustering", table_body_style), Paragraph("K-Means (distance-based centroids), DBSCAN (density-based), Hierarchical Clustering (agglomerative linkages)", table_body_style)],
-        [Paragraph("Time Series", table_body_style), Paragraph("Exponential Smoothing (Holt-Winters), ARIMA (auto-regressive), XGBoost Time Series (regression on temporal offsets)", table_body_style)]
+        [Paragraph("<b>Task Type</b>", table_header_style), Paragraph("<b>Candidate Algorithms & Parameter Justifications</b>", table_header_style)],
+        [Paragraph("Classification", table_body_style), Paragraph("XGBoost Classifier (gradient boosting), Random Forest (bagging), Logistic Regression, Naive Bayes (fast baseline), MLP Neural Network (non-linear representations)", table_body_style)],
+        [Paragraph("Regression", table_body_style), Paragraph("XGBoost Regressor, Random Forest Regressor, ElasticNet (regularized linear), MLP Regressor", table_body_style)],
+        [Paragraph("Clustering", table_body_style), Paragraph("K-Means (centroid-based), DBSCAN (density-based), Agglomerative Clustering (hierarchical linkage)", table_body_style)]
     ]
-    model_table = Table(model_rows, colWidths=[100, 404])
+    model_table = Table(model_rows, colWidths=[90, 414])
     model_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), PRIMARY_COLOR),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
@@ -399,15 +404,14 @@ def build_pdf():
     story.append(model_table)
     story.append(Spacer(1, 6))
 
-    story.append(Paragraph("Phase 6: Multi-Fold Cross-Validation Framework", h2_style))
+    story.append(Paragraph("Phase 6: Threaded Training & Cross-Validation", h2_style))
     story.append(Paragraph(
-        "To prevent overfitting, the models are trained using cross-validation. "
-        "The number of splits is dynamically adjusted: $K = \\min(5, \\max(2, N / 30))$, ensuring that "
-        "very small datasets do not fail during validation splits. For classification, the system uses "
-        "<code>StratifiedKFold</code> to preserve target class proportions. For regression, standard "
-        "<code>KFold</code> is used. For time-series, a temporal <code>TimeSeriesSplit</code> is used, "
-        "preventing data leakage from future time steps. Progress and intermediate scores (Accuracy, "
-        "R², or Silhouette) are pushed to the WebSocket client fold-by-fold as they are computed.",
+        "All machine learning models are trained locally on the server CPU. Because training is computationally intensive, "
+        "running it directly in FastAPI's async loop would block other WebSocket events and lock user pages. "
+        "To prevent this, the training pipeline runs inside a background thread pool executor (<code>run_in_executor</code>). "
+        "Overfitting is minimized through cross-validation splits (K = min(5, max(2, N/30))). "
+        "The system uses <code>StratifiedKFold</code> for classification (to preserve imbalanced target bounds) "
+        "and <code>TimeSeriesSplit</code> for temporal forecasting. Progress and training logs are pushed live via WebSocket fold-by-fold.",
         body_style
     ))
     
@@ -425,12 +429,12 @@ def build_pdf():
     
     # Process diagram 3
     post_data = [
-        [Paragraph("<b>Step 7: Evaluate</b>", table_header_style), 
-         Paragraph("<b>Step 8: SHAP (Explain)</b>", table_header_style), 
-         Paragraph("<b>Step 9: Visual & Chat</b>", table_header_style)],
-        [Paragraph("Evaluates all models on a holdout test set (80/20 split). Compares metrics and selects the best performer.", table_body_style),
-         Paragraph("Calculates SHAP values to explain global feature importances. Falls back to tree/linear importances.", table_body_style),
-         Paragraph("Generates heatmaps, histograms. Runs the LangChain LLM agent for interactive, natural language querying.", table_body_style)]
+        [Paragraph("<b>Step 7: Evaluate Test Set</b>", table_header_style), 
+         Paragraph("<b>Step 8: SHAP Explainability</b>", table_header_style), 
+         Paragraph("<b>Step 9: LangChain Chat</b>", table_header_style)],
+        [Paragraph("Tests models on a 20% holdout split. Computes Accuracy, F1, ROC-AUC, R², Silhouette, and Confusion Matrices.", table_body_style),
+         Paragraph("Attributes predictions using SHAP values. Implements multi-tier fallbacks (tree, kernel, importances, coefficients).", table_body_style),
+         Paragraph("Spawns a conversational agent in LangChain. Reads session variables from Firestore, calling Gemini or Groq APIs.", table_body_style)]
     ]
     post_table = Table(post_data, colWidths=[168, 168, 168])
     post_table.setStyle(TableStyle([
@@ -445,7 +449,7 @@ def build_pdf():
     story.append(post_table)
     story.append(Spacer(1, 6))
 
-    story.append(Paragraph("Phase 7: Rigid Model Evaluation & Holdout Testing", h2_style))
+    story.append(Paragraph("Phase 7: Model Evaluation & Holdout Testing", h2_style))
     story.append(Paragraph(
         "A separate 20% holdout test dataset is set aside to evaluate model generalization. "
         "The backend trains each candidate model on the training fold, predicts on the test set, and calculates "
@@ -459,19 +463,18 @@ def build_pdf():
     story.append(Paragraph("Phase 8: SHAP Interpretability & Feature Attribution", h2_style))
     story.append(Paragraph(
         "To provide model transparency, DataCopilot computes SHAP (SHapley Additive exPlanations) values "
-        "for the best-performing model, identifying how much each feature contributes to predictions. "
-        "Because SHAP calculations can be computationally intensive, a multi-tier fallback architecture is used:",
+        "for the best-performing model. Because SHAP calculations can be computationally intensive, the backend "
+        "features a robust, multi-tier fallback architecture to guarantee zero-crash execution:",
         body_style
     ))
-    story.append(Paragraph("1. <b>TreeExplainer:</b> Used for tree-based ensemble models (XGBoost, Random Forest, Gradient Boosting) to compute exact SHAP values quickly.", bullet_style))
-    story.append(Paragraph("2. <b>KernelExplainer:</b> If the best model is non-tree-based (e.g., MLP, KNN, Logistic Regression), the system samples a small background dataset (up to 50 rows) to estimate SHAP values.", bullet_style))
-    story.append(Paragraph("3. <b>Feature Importances:</b> If SHAP fails entirely, the system extracts the model's native <code>feature_importances_</code>.", bullet_style))
-    story.append(Paragraph("4. <b>Coefficients:</b> For linear models, the system averages absolute model weights (<code>coef_</code>) to rank features.", bullet_style))
-    story.append(Paragraph("The resulting top 15 features are sorted and stored to render feature attribution charts.", bullet_style))
+    story.append(Paragraph("1.&nbsp;&nbsp;<b>TreeExplainer:</b> Activated for tree-based ensemble models (XGBoost, Random Forest) to compute exact SHAP values quickly.", numbered_style))
+    story.append(Paragraph("2.&nbsp;&nbsp;<b>KernelExplainer:</b> Activated for non-tree models (KNN, MLP), sampling a small background dataset (up to 50 rows) to estimate feature impacts.", numbered_style))
+    story.append(Paragraph("3.&nbsp;&nbsp;<b>Feature Importances Fallback:</b> Extracted directly using the model's native <code>feature_importances_</code> if explainer calculations fail.", numbered_style))
+    story.append(Paragraph("4.&nbsp;&nbsp;<b>Linear Coefficients Fallback:</b> Extracted by averaging absolute model weights (<code>coef_</code>) if a linear baseline is chosen.", numbered_style))
     
-    story.append(Paragraph("Phase 9: Conversational AI & Persistence Setup", h2_style))
+    story.append(Paragraph("Phase 9: Conversational AI & LangChain Agent Context", h2_style))
     story.append(Paragraph(
-        "When the pipeline finishes, the backend compiles the data profile, model scores, and SHAP features "
+        "Upon pipeline completion, the backend compiles the data profile, model scores, and SHAP features "
         "into a structured payload. This is passed to a background thread to generate an initial AI analysis "
         "using Google Gemini or Groq. The prompt instructs the LLM to explain the model choice, "
         "explain which features drive performance, point out any data anomalies, and offer business recommendations. "
@@ -493,7 +496,7 @@ def build_pdf():
         body_style
     ))
     
-    story.append(Paragraph("4.1 Structured Firestore Session Schema", h2_style))
+    story.append(Paragraph("4.1 Structured Firestore Session Schema (Per-User Storage)", h2_style))
     story.append(Paragraph(
         "The ultimate output of the pipeline is a rich JSON document persisted in Firestore under a unique "
         "<code>session_id</code>. This structured record enables full reproducibility and is defined as follows:",
@@ -512,22 +515,22 @@ def build_pdf():
     "recommend": { "status": "done", "data": { "models": [...] } },
     "train": { "status": "done", "data": { "cv_results": { "xgboost": { "mean": 0.942, ... } } } },
     "evaluate": { "status": "done", "data": { "metrics": [...], "confusion_matrix": [...] } },
-    "shap": { "status": "done", "data": { "features": [ { "name": "Tenure", "importance": 0.354 }, ... ] } },
+    "shap": { "status": "done", "data": { "features": [ { "name": "Tenure", "importance": 0.354 } ] } },
     "viz": { "status": "done", "data": { "correlation_matrix": [...], "histograms": {...} } }
   }
 }"""
     story.append(Paragraph(code_content.replace(" ", "&nbsp;").replace("\n", "<br/>"), code_style))
     
-    story.append(Paragraph("4.2 Next.js Dashboard Mockup", h2_style))
+    story.append(Paragraph("4.2 Next.js Dashboard Mockup & Client Contexts", h2_style))
     story.append(Paragraph(
-        "The Next.js frontend uses this state to render a premium dashboard, showing the pipeline "
-        "progress, performance charts (ROC curves, heatmaps), SHAP feature importance, "
-        "and an AI chat assistant. Below is the generated dashboard interface mockup:",
+        "The Next.js frontend uses state contexts to manage and render a premium, responsive dashboard: "
+        "<code>AuthContext</code> maintains user states and injects JWT authorization headers, while <code>SessionContext</code> "
+        "manages the active WebSocket connection. Real-time metrics are rendered in a sleek dark-themed dashboard:",
         body_style
     ))
     
     if os.path.exists(local_image_path):
-        story.append(Spacer(1, 4))
+        story.append(Spacer(1, 3))
         story.append(Image(local_image_path, width=340, height=170, hAlign='CENTER'))
     else:
         story.append(Paragraph("[Dashboard Mockup Image Placeholder — File Missing]", body_style))

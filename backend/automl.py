@@ -61,25 +61,25 @@ def detect_target_column(df: pd.DataFrame) -> str | None:
     return df.columns[-1]
 
 
-def detect_task_type(df: pd.DataFrame, target_col: str | None, time_col: str | None) -> tuple[str, dict]:
+def detect_task_type(df: pd.DataFrame, target_col: str | None, time_col: str | None) -> tuple[str, dict, str]:
     if target_col is None:
-        return "Clustering", {}
+        return "Clustering", {}, "No target column hint was identified or provided, and the dataset contains multiple numeric columns for unsupervised group discovery."
         
     if time_col is not None:
-        return "Time Series", {}
+        return "Time Series", {}, f"A date/time column ('{time_col}') was detected alongside a target column ('{target_col}'), indicating a temporal forecasting/prediction task."
 
     target = df[target_col].dropna()
     n_unique = target.nunique()
 
     if pd.api.types.is_numeric_dtype(target) and n_unique > 15:
-        return "Regression", {}
+        return "Regression", {}, f"The target column ('{target_col}') contains continuous numeric values ({n_unique} unique values), suggesting a value estimation/regression task."
 
     counts = target.value_counts().to_dict()
     counts = {str(k): int(v) for k, v in counts.items()}
 
     if n_unique == 2:
-        return "Binary Classification", counts
-    return "Multi-class Classification", counts
+        return "Binary Classification", counts, f"The target column ('{target_col}') has exactly 2 unique categories, suggesting a binary decision classification task."
+    return "Multi-class Classification", counts, f"The target column ('{target_col}') has a discrete set of {n_unique} unique categories, indicating a multi-category classification task."
 
 
 def safe_float(v):
@@ -128,7 +128,11 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
         yield event("upload", "error", {"error": str(e)})
         return
 
-    # ── STEP 2: DATA PROFILE ───────────────────────────────────────────────────
+    # Detect target & time columns early for EDA and PCA coloring
+    time_col = detect_time_column(df)
+    target_col = detect_target_column(df)
+
+    # ── STEP 2: DATA PROFILE (EDA & PCA) ───────────────────────────────────────
     yield event("analyze", "running", {})
     per_column = []
     for col in df.columns:
@@ -137,25 +141,104 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
         dtype = str(df[col].dtype)
         col_info = {"name": col, "dtype": dtype, "nulls": nulls, "null_pct": null_pct}
 
+        # Outlier & distribution computations
         if pd.api.types.is_numeric_dtype(df[col]) and not df[col].isna().all():
             col_info["min"] = safe_float(df[col].min())
             col_info["max"] = safe_float(df[col].max())
             col_info["mean"] = safe_float(df[col].mean())
             col_info["std"] = safe_float(df[col].std())
+
+            # Outlier detection (IQR method)
+            try:
+                q1 = df[col].quantile(0.25)
+                q3 = df[col].quantile(0.75)
+                iqr = q3 - q1
+                lower_bound = q1 - 1.5 * iqr
+                upper_bound = q3 + 1.5 * iqr
+                outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)][col].count()
+                col_info["outliers_count"] = int(outliers)
+                col_info["outliers_pct"] = round(float(outliers / len(df) * 100), 1)
+            except Exception:
+                pass
+
+            # Histogram bins for EDA visualization
+            try:
+                clean_series = df[col].dropna()
+                counts, bin_edges = np.histogram(clean_series, bins=10)
+                col_info["histogram"] = {
+                    "counts": counts.tolist(),
+                    "bins": [round(float(b), 4) for b in bin_edges.tolist()],
+                }
+            except Exception:
+                pass
         else:
             top = df[col].value_counts().head(5).to_dict()
             col_info["top_values"] = {str(k): int(v) for k, v in top.items()}
 
         per_column.append(col_info)
 
+    # PCA Projection for high-dimensional EDA mapping
+    pca_data = {}
+    try:
+        num_cols = df.select_dtypes(include=np.number).columns.tolist()
+        if target_col in num_cols:
+            num_cols.remove(target_col)
+
+        if len(num_cols) >= 2:
+            from sklearn.decomposition import PCA
+            from sklearn.preprocessing import StandardScaler
+
+            # Impute temporarily for PCA calculation
+            X_pca = df[num_cols].copy()
+            for c in num_cols:
+                if X_pca[c].isna().any():
+                    X_pca[c] = X_pca[c].fillna(X_pca[c].median() if not X_pca[c].isna().all() else 0)
+
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_pca)
+
+            pca = PCA(n_components=min(3, len(num_cols)))
+            X_proj = pca.fit_transform(X_scaled)
+
+            var_ratio = pca.explained_variance_ratio_.tolist()
+
+            # Downsample for premium visual performance (max 300 points)
+            max_points = 300
+            if len(df) > max_points:
+                indices = np.random.choice(len(df), max_points, replace=False)
+            else:
+                indices = np.arange(len(df))
+
+            points = []
+            for idx in indices:
+                pt = {
+                    "x": round(float(X_proj[idx, 0]), 4),
+                    "y": round(float(X_proj[idx, 1]), 4),
+                }
+                if X_proj.shape[1] > 2:
+                    pt["z"] = round(float(X_proj[idx, 2]), 4)
+                if target_col is not None:
+                    pt["label"] = str(df.iloc[idx][target_col])
+                points.append(pt)
+
+            pca_data = {
+                "explained_variance": [round(float(v), 4) for v in var_ratio],
+                "points": points,
+                "components_count": len(var_ratio),
+            }
+    except Exception as pca_e:
+        logger.warning(f"PCA calculation failed: {pca_e}")
+
     duplicate_rows = int(df.duplicated().sum())
-    yield event("analyze", "done", {"per_column": per_column, "duplicate_rows": duplicate_rows})
+    yield event("analyze", "done", {
+        "per_column": per_column,
+        "duplicate_rows": duplicate_rows,
+        "pca_data": pca_data,
+    })
 
     # ── STEP 3: TASK DETECTION ─────────────────────────────────────────────────
     yield event("task", "running", {})
-    time_col = detect_time_column(df)
-    target_col = detect_target_column(df)
-    task_type, class_counts = detect_task_type(df, target_col, time_col)
+    task_type, class_counts, reason = detect_task_type(df, target_col, time_col)
     is_regression = task_type in ("Regression", "Time Series")
     is_clustering = task_type == "Clustering"
     is_time_series = task_type == "Time Series"
@@ -165,6 +248,7 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
         "time_col": time_col,
         "task_type": task_type,
         "class_counts": class_counts,
+        "reason": reason,
         "is_imbalanced": (
             False if (is_regression or is_clustering) else
             max(class_counts.values()) / sum(class_counts.values()) > 0.75
