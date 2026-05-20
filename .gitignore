@@ -16,6 +16,7 @@ backend/*.log
 backend/uploads/
 backend/tmp/
 backend/models/saved/
+backend/workspace/
 *.egg-info/
 dist/
 build/
@@ -44,6 +45,10 @@ frontend/yarn-error.log*
 secrets.json
 firebase-adminsdk*.json
 service-account*.json
+serviceAccountKey.json
+*serviceAccount*.json
+*service_account*.json
+*.serviceAccount.json
 
 # ---- OS ----
 .DS_Store
