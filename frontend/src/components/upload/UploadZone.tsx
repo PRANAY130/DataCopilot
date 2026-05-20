@@ -53,6 +53,7 @@ export default function UploadZone() {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [mode, setMode] = useState<"auto" | "manual">("auto");
 
   // Preview state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -173,7 +174,7 @@ export default function UploadZone() {
       } else { return; }
 
       setPreviewOpen(false);
-      router.push(`/analysis/${sessionId}`);
+      router.push(`/analysis/${sessionId}?mode=${mode}`);
     } catch (e: any) {
       setError(e.message || "Connection failed. Is the backend running?");
     } finally {
@@ -313,7 +314,61 @@ export default function UploadZone() {
 
       {/* Action buttons — shown after file/demo selected */}
       {file && (
-        <div style={{ display:"flex",gap:10,justifyContent:"center",marginTop:28,flexWrap:"wrap" }}>
+        <>
+          {/* Mode Toggle Selection */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginTop: 24, marginBottom: 12 }}>
+            <span style={{ fontFamily: "Fira Code, monospace", fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.1em", marginBottom: 8, textTransform: "uppercase" }}>
+              // Execution Mode
+            </span>
+            <div style={{ display: "flex", border: "1px solid rgba(0,245,255,0.25)", padding: 2, background: "rgba(4,4,16,0.8)", position: "relative" }}>
+              <button
+                onClick={() => setMode("auto")}
+                style={{
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  padding: "6px 18px",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.25s",
+                  background: mode === "auto" ? "var(--cyan)" : "transparent",
+                  color: mode === "auto" ? "black" : "var(--text-muted)",
+                  boxShadow: mode === "auto" ? "0 0 15px rgba(0,245,255,0.4)" : "none",
+                }}
+              >
+                Auto Mode
+              </button>
+              <button
+                onClick={() => setMode("manual")}
+                style={{
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  padding: "6px 18px",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.25s",
+                  background: mode === "manual" ? "var(--cyan)" : "transparent",
+                  color: mode === "manual" ? "black" : "var(--text-muted)",
+                  boxShadow: mode === "manual" ? "0 0 15px rgba(0,245,255,0.4)" : "none",
+                }}
+              >
+                Manual Mode
+              </button>
+            </div>
+            <p style={{ fontFamily: "Fira Code, monospace", fontSize: 10, color: "var(--text-dim)", marginTop: 8, textAlign: "center", maxWidth: 440, lineHeight: 1.4 }}>
+              {mode === "auto" 
+                ? "Pipeline runs end-to-end automatically with standard configurations."
+                : "Pipeline pauses at Task Detection, Preprocessing, and Model Selection steps to let you customize settings."
+              }
+            </p>
+          </div>
+
+          <div style={{ display:"flex",gap:10,justifyContent:"center",marginTop:16,flexWrap:"wrap" }}>
           <NeonButton variant="solid-cyan" size="lg" onClick={handleAnalyze} disabled={uploading}>
             {uploading ? (
               <><span style={{ width:14,height:14,border:"2px solid currentColor",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.6s linear infinite",display:"inline-block" }} />Initializing...</>
@@ -339,7 +394,8 @@ export default function UploadZone() {
 
           <NeonButton variant="ghost" size="lg" onClick={handleClear}>✕ Clear</NeonButton>
         </div>
-      )}
+      </>
+    )}
 
       <p style={{ fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-dim)",textAlign:"center",marginTop:24,letterSpacing:"0.08em" }}>
         // Files are processed in-memory and never permanently stored

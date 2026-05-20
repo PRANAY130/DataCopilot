@@ -222,6 +222,7 @@ async def analysis_websocket(
     websocket: WebSocket,
     session_id: str,
     token: Optional[str] = None,
+    mode: Optional[str] = None,
 ):
     await websocket.accept()
 
@@ -246,15 +247,17 @@ async def analysis_websocket(
         await websocket.close(code=1011)
         return
 
-    logger.info(f"WS pipeline started: session={session_id} uid={uid}")
+    logger.info(f"WS pipeline started: session={session_id} uid={uid} mode={mode}")
 
-    # Thread-safe queue for pipeline events
+    # Thread-safe queues for pipeline events
     event_queue: queue.Queue = queue.Queue()
+    manual_mode = (mode == "manual")
+    input_queue = queue.Queue() if manual_mode else None
 
     def run_pipeline_thread():
         """Runs the AutoML pipeline in a background thread."""
         try:
-            for step_event in run_pipeline(file_path):
+            for step_event in run_pipeline(file_path, manual_mode=manual_mode, input_queue=input_queue):
                 event_queue.put(step_event)
         except Exception as e:
             logger.error(f"Pipeline error for session {session_id}: {e}")
@@ -265,13 +268,32 @@ async def analysis_websocket(
     thread = threading.Thread(target=run_pipeline_thread, daemon=True)
     thread.start()
 
-    # Stream events from the queue to the WebSocket
+    # Async task to listen for client messages
+    async def listen_to_client():
+        try:
+            while True:
+                data = await websocket.receive_json()
+                if isinstance(data, dict) and data.get("action") == "resume":
+                    payload = data.get("data", {})
+                    if input_queue is not None:
+                        input_queue.put(payload)
+                    logger.info(f"WS manual resume received for {session_id}: {payload}")
+        except WebSocketDisconnect:
+            logger.info(f"Client disconnected in reader for session {session_id}")
+        except Exception as e:
+            logger.error(f"WS reader error for session {session_id}: {e}")
+
+    client_listener = asyncio.create_task(listen_to_client())
+
     try:
         while True:
             try:
-                # Non-blocking check every 50ms so we can handle disconnect
+                # Non-blocking check every 50ms
                 event = event_queue.get_nowait()
             except queue.Empty:
+                # check if client listener is done (e.g. disconnected)
+                if client_listener.done():
+                    break
                 await asyncio.sleep(0.05)
                 continue
 
@@ -299,27 +321,27 @@ async def analysis_websocket(
                 mark_session_error(uid, session_id, data.get("error", "Unknown error"))
                 break
 
-        # Generate AI insight and mark session complete
-        updated_session = get_session(uid, session_id)
-        if updated_session:
-            loop = asyncio.get_event_loop()
-            ai_insight = await loop.run_in_executor(None, generate_shap_insight, updated_session)
-            mark_session_done(uid, session_id, ai_insight)
-            try:
-                await websocket.send_json({
-                    "step": "complete",
-                    "status": "done",
-                    "data": {"ai_insight": ai_insight},
-                    "elapsed": event.get("elapsed", 0) if event else 0,
-                })
-            except (WebSocketDisconnect, RuntimeError):
-                pass
+        # If we broke out of the loop and the client is still connected, generate insight and mark done
+        if not client_listener.done():
+            updated_session = get_session(uid, session_id)
+            if updated_session:
+                loop = asyncio.get_event_loop()
+                ai_insight = await loop.run_in_executor(None, generate_shap_insight, updated_session)
+                mark_session_done(uid, session_id, ai_insight)
+                try:
+                    await websocket.send_json({
+                        "step": "complete",
+                        "status": "done",
+                        "data": {"ai_insight": ai_insight},
+                        "elapsed": event.get("elapsed", 0) if event else 0,
+                    })
+                except (WebSocketDisconnect, RuntimeError):
+                    pass
 
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for session {session_id}")
     except Exception as e:
         logger.error(f"WebSocket error for session {session_id}: {e}")
     finally:
+        client_listener.cancel()
         # Delete the dataset file to save space (no longer needed once results are in Firestore)
         try:
             p = Path(file_path)

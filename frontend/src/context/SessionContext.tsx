@@ -5,7 +5,7 @@ import {
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-export type StepStatus = "pending" | "running" | "done" | "error";
+export type StepStatus = "pending" | "running" | "paused" | "done" | "error";
 
 export interface StepState {
   status: StepStatus;
@@ -24,8 +24,9 @@ export interface SessionState {
 
 interface SessionContextType {
   session: SessionState | null;
-  startSession: (sessionId: string, idToken: string | null) => void;
+  startSession: (sessionId: string, idToken: string | null, mode?: string) => void;
   loadSessionFromApi: (sessionId: string, idToken: string | null) => Promise<void>;
+  resumePipeline: (stepId: string, config: Record<string, any>) => void;
 }
 
 const STEP_IDS = ["upload", "analyze", "task", "preprocess", "recommend", "train", "evaluate", "shap", "viz"];
@@ -37,6 +38,7 @@ const SessionContext = createContext<SessionContextType>({
   session: null,
   startSession: () => {},
   loadSessionFromApi: async () => {},
+  resumePipeline: () => {},
 });
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -47,7 +49,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Timer ref — StrictMode cleanup cancels this before WS ever opens
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const startSession = (sessionId: string, idToken: string | null) => {
+  const startSession = (sessionId: string, idToken: string | null, mode?: string) => {
     // Session already done — no need to reconnect
     if (session?.sessionId === sessionId && session?.status === "done") return;
     // Already live on this session
@@ -86,8 +88,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       connectTimerRef.current = null;
 
       const wsBase = BACKEND_URL.replace(/^http/, "ws");
-      const tokenParam = idToken ? `?token=${encodeURIComponent(idToken)}` : "";
-      const url = `${wsBase}/ws/analysis/${sessionId}${tokenParam}`;
+      const params = new URLSearchParams();
+      if (idToken) params.set("token", idToken);
+      if (mode) params.set("mode", mode);
+      const queryString = params.toString() ? `?${params.toString()}` : "";
+      const url = `${wsBase}/ws/analysis/${sessionId}${queryString}`;
 
       const ws = new WebSocket(url);
       wsRef.current = ws;
@@ -141,6 +146,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       if (status === "running") {
         updatedSteps[step] = { status: "running", data: {} };
+      } else if (status === "paused") {
+        updatedSteps[step] = { status: "paused", data: data || {} };
       } else if (status === "done") {
         updatedSteps[step] = { status: "done", data: data || {} };
       } else if (status === "log") {
@@ -195,8 +202,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const resumePipeline = (stepId: string, config: Record<string, any>) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        action: "resume",
+        step: stepId,
+        data: config
+      }));
+      setSession(prev => {
+        if (!prev) return prev;
+        const updatedSteps = { ...prev.steps };
+        updatedSteps[stepId] = { ...updatedSteps[stepId], status: "running" };
+        return { ...prev, steps: updatedSteps };
+      });
+    }
+  };
+
   return (
-    <SessionContext.Provider value={{ session, startSession, loadSessionFromApi }}>
+    <SessionContext.Provider value={{ session, startSession, loadSessionFromApi, resumePipeline }}>
       {children}
     </SessionContext.Provider>
   );

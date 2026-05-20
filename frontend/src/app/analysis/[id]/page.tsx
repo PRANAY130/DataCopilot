@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, use, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import NeonButton from "@/components/ui/NeonButton";
 import StepTracker from "@/components/analysis/StepTracker";
@@ -34,13 +34,16 @@ const STEP_DETAILS: Record<string, string> = {
 
 export default function AnalysisPage({ params }: { params: Promise<{ id: string }> | any }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const authHeader = useAuthHeader();
-  const { session, startSession, loadSessionFromApi } = useSession();
+  const { session, startSession, loadSessionFromApi, resumePipeline } = useSession();
   const [checkingApi, setCheckingApi] = useState(true);
 
   const sessionId = typeof params === "object" && !(params instanceof Promise)
     ? params.id
     : use(params as Promise<{ id: string }>).id;
+
+  const mode = searchParams.get("mode") || "auto";
 
   // Smart loader: check if session is already done → load from API (Firestore)
   // Otherwise open a WebSocket for live streaming
@@ -66,12 +69,12 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
           loadSessionFromApi(sessionId, token);
         } else {
           // New or still-running session → open WebSocket
-          startSession(sessionId, token);
+          startSession(sessionId, token, mode);
         }
       })
       .catch(() => {
         // Network error → fallback to WebSocket
-        startSession(sessionId, token);
+        startSession(sessionId, token, mode);
       })
       .finally(() => setCheckingApi(false));
   }, [sessionId]);
@@ -99,6 +102,8 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
   };
 
   const fileInfo = session?.steps?.upload?.data;
+  const pausedStepId = STEP_IDS.find(id => session?.steps[id]?.status === "paused");
+  const pausedStep = pausedStepId ? session?.steps[pausedStepId] : null;
 
   return (
     <main style={{ background: "var(--bg-void)", minHeight: "100vh" }} className="cyber-grid-sm">
@@ -147,9 +152,16 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
           {/* LEFT: Step Tracker */}
           <StepTracker steps={steps} onStepSelect={handleStepSelect} />
 
-          {/* RIGHT: File Info + Hint */}
+          {/* RIGHT: Action Config Panel / File Info + Hint */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {fileInfo && (
+            {pausedStep ? (
+              <PausedConfigPanel
+                key={pausedStepId}
+                stepId={pausedStepId}
+                data={pausedStep.data}
+                resumePipeline={resumePipeline}
+              />
+            ) : fileInfo ? (
               <div style={{ border: "1px solid var(--border-faint)", background: "var(--bg-card)", padding: "20px 24px" }}>
                 <p style={{ fontFamily: "Fira Code, monospace", fontSize: 10, color: "var(--cyan)", letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 12 }}>// FILE INFORMATION</p>
                 {[
@@ -164,7 +176,7 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
 
             <div style={{ border: "1px solid rgba(0,245,255,0.12)", background: "rgba(0,245,255,0.02)", padding: "16px 20px" }}>
               <p style={{ fontFamily: "Fira Code, monospace", fontSize: 10, color: "var(--amber)", marginBottom: 8 }}>💡 Click Any Step to Inspect</p>
@@ -203,4 +215,311 @@ function getDoneDetail(stepId: string, data: any): string {
     case "viz": return `Charts and correlation matrix ready`;
     default: return "Completed";
   }
+}
+
+interface PausedConfigPanelProps {
+  stepId: string;
+  data: any;
+  resumePipeline: (stepId: string, config: Record<string, any>) => void;
+}
+
+function PausedConfigPanel({ stepId, data, resumePipeline }: PausedConfigPanelProps) {
+  const [submitting, setSubmitting] = useState(false);
+
+  // States for Task step
+  const [targetCol, setTargetCol] = useState(data.target_col || "none");
+  const [taskType, setTaskType] = useState(data.task_type || "Binary Classification");
+  const [timeCol, setTimeCol] = useState(data.time_col || "none");
+  const [droppedCols, setDroppedCols] = useState<string[]>([]);
+
+  // States for Preprocess step
+  const [imputation, setImputation] = useState("median");
+  const [scaling, setScaling] = useState("standard");
+
+  // States for Recommend step
+  const [enabledModels, setEnabledModels] = useState<string[]>([]);
+  const [modelParams, setModelParams] = useState<Record<string, Record<string, any>>>({});
+
+  // Sync initial data
+  useEffect(() => {
+    if (stepId === "task") {
+      setTargetCol(data.target_col || "none");
+      setTaskType(data.task_type || "Binary Classification");
+      setTimeCol(data.time_col || "none");
+      setDroppedCols([]);
+    } else if (stepId === "preprocess") {
+      setImputation("median");
+      setScaling("standard");
+    } else if (stepId === "recommend" && data.models) {
+      setEnabledModels(data.models.map((m: any) => m.id));
+      const params: Record<string, Record<string, any>> = {};
+      data.models.forEach((m: any) => {
+        if (m.params) {
+          params[m.id] = { ...m.params };
+        }
+      });
+      setModelParams(params);
+    }
+  }, [stepId, data]);
+
+  const handleConfirm = () => {
+    setSubmitting(true);
+    let payload: Record<string, any> = {};
+
+    if (stepId === "task") {
+      payload = {
+        target_col: targetCol === "none" ? null : targetCol,
+        task_type: taskType,
+        time_col: timeCol === "none" ? null : timeCol,
+        dropped_cols: droppedCols,
+      };
+    } else if (stepId === "preprocess") {
+      payload = {
+        imputation_strategy: imputation,
+        scaling_strategy: scaling,
+      };
+    } else if (stepId === "recommend") {
+      payload = {
+        enabled_model_ids: enabledModels,
+        model_params: modelParams,
+      };
+    }
+
+    resumePipeline(stepId, payload);
+  };
+
+  const handleParamChange = (modelId: string, paramName: string, value: any) => {
+    setModelParams(prev => ({
+      ...prev,
+      [modelId]: {
+        ...prev[modelId],
+        [paramName]: value
+      }
+    }));
+  };
+
+  const renderContent = () => {
+    if (stepId === "task") {
+      const columns = data.columns || [];
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={{ display: "block", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", marginBottom: 6 }}>Target Column</label>
+            <select
+              value={targetCol || "none"}
+              onChange={(e) => setTargetCol(e.target.value)}
+              style={{ width: "100%", background: "rgba(0,0,0,0.6)", border: "1px solid rgba(0,245,255,0.25)", color: "white", padding: 8, fontFamily: "Rajdhani, sans-serif", fontSize: 14 }}
+            >
+              <option value="none">No Target (Clustering)</option>
+              {columns.map((c: string) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", marginBottom: 6 }}>Task Type</label>
+            <select
+              value={taskType}
+              onChange={(e) => setTaskType(e.target.value)}
+              style={{ width: "100%", background: "rgba(0,0,0,0.6)", border: "1px solid rgba(0,245,255,0.25)", color: "white", padding: 8, fontFamily: "Rajdhani, sans-serif", fontSize: 14 }}
+            >
+              <option value="Binary Classification">Binary Classification</option>
+              <option value="Multi-class Classification">Multi-class Classification</option>
+              <option value="Regression">Regression</option>
+              <option value="Clustering">Clustering</option>
+              <option value="Time Series">Time Series</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", marginBottom: 6 }}>Time/Date Column</label>
+            <select
+              value={timeCol || "none"}
+              onChange={(e) => setTimeCol(e.target.value)}
+              style={{ width: "100%", background: "rgba(0,0,0,0.6)", border: "1px solid rgba(0,245,255,0.25)", color: "white", padding: 8, fontFamily: "Rajdhani, sans-serif", fontSize: 14 }}
+            >
+              <option value="none">None</option>
+              {columns.map((c: string) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", marginBottom: 6 }}>Select Columns to Drop</label>
+            <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border-faint)", padding: 8, background: "rgba(0,0,0,0.3)" }}>
+              {columns.filter((c: string) => c !== targetCol).map((c: string) => (
+                <label key={c} style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0", cursor: "pointer", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--text-bright)" }}>
+                  <input
+                    type="checkbox"
+                    checked={droppedCols.includes(c)}
+                    onChange={(e) => {
+                      if (e.target.checked) setDroppedCols([...droppedCols, c]);
+                      else setDroppedCols(droppedCols.filter(x => x !== c));
+                    }}
+                  />
+                  {c}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (stepId === "preprocess") {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={{ display: "block", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", marginBottom: 6 }}>Imputation Strategy</label>
+            <select
+              value={imputation}
+              onChange={(e) => setImputation(e.target.value)}
+              style={{ width: "100%", background: "rgba(0,0,0,0.6)", border: "1px solid rgba(0,245,255,0.25)", color: "white", padding: 8, fontFamily: "Rajdhani, sans-serif", fontSize: 14 }}
+            >
+              <option value="median">Median (Recommended)</option>
+              <option value="mean">Mean</option>
+              <option value="mode">Most Frequent (Mode)</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", marginBottom: 6 }}>Scaling Strategy</label>
+            <select
+              value={scaling}
+              onChange={(e) => setScaling(e.target.value)}
+              style={{ width: "100%", background: "rgba(0,0,0,0.6)", border: "1px solid rgba(0,245,255,0.25)", color: "white", padding: 8, fontFamily: "Rajdhani, sans-serif", fontSize: 14 }}
+            >
+              <option value="standard">StandardScaler (Zero mean, unit variance)</option>
+              <option value="minmax">MinMaxScaler ([0, 1] range)</option>
+              <option value="none">No Scaling</option>
+            </select>
+          </div>
+
+          {data.detected_id_cols && data.detected_id_cols.length > 0 && (
+            <div style={{ border: "1px dashed rgba(0,245,255,0.2)", padding: "10px 12px", background: "rgba(0,245,255,0.01)" }}>
+              <p style={{ fontFamily: "Fira Code, monospace", fontSize: 9, color: "var(--cyan)", textTransform: "uppercase", marginBottom: 4 }}>// AUTO ID DROPPING ACTIVE</p>
+              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                The system automatically flagged the following ID/index columns to drop: <strong style={{ color: "var(--cyan)" }}>{data.detected_id_cols.join(", ")}</strong>.
+              </p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (stepId === "recommend") {
+      const models = data.models || [];
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={{ display: "block", fontFamily: "Fira Code, monospace", fontSize: 11, color: "var(--cyan)", marginBottom: 6 }}>Enabled Models</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {models.map((m: any) => (
+                <div key={m.id} style={{ border: "1px solid var(--border-faint)", padding: 10, background: "rgba(0,0,0,0.2)" }}>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: 14, color: "var(--text-bright)" }}>
+                    <input
+                      type="checkbox"
+                      checked={enabledModels.includes(m.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) setEnabledModels([...enabledModels, m.id]);
+                        else setEnabledModels(enabledModels.filter(x => x !== m.id));
+                      }}
+                      style={{ marginTop: 3 }}
+                    />
+                    <div>
+                      {m.name}
+                      <div style={{ fontFamily: "Inter, sans-serif", fontWeight: 400, fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                        {m.reason}
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Render Hyperparameter adjustments if enabled */}
+                  {enabledModels.includes(m.id) && m.params && Object.keys(m.params).length > 0 && (
+                    <div style={{ marginTop: 8, borderTop: "1px dashed var(--border-faint)", paddingTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      {Object.entries(m.params).map(([paramName, paramVal]: [string, any]) => (
+                        <div key={paramName}>
+                          <label style={{ display: "block", fontFamily: "Fira Code, monospace", fontSize: 9, color: "var(--cyan)", marginBottom: 3 }}>{paramName}</label>
+                          <input
+                            type="text"
+                            value={modelParams[m.id]?.[paramName] ?? paramVal}
+                            onChange={(e) => handleParamChange(m.id, paramName, e.target.value)}
+                            style={{ width: "100%", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(0,245,255,0.2)", color: "white", padding: "3px 6px", fontFamily: "Fira Code, monospace", fontSize: 11 }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const STEP_TITLES: Record<string, string> = {
+    task: "Configure ML Task",
+    preprocess: "Configure Preprocessing",
+    recommend: "Select Model Candidates",
+  };
+
+  return (
+    <div style={{ border: "1px solid var(--cyan)", background: "rgba(4,4,18,0.95)", padding: "20px 24px", boxShadow: "0 0 25px rgba(0,245,255,0.15)", position: "relative" }}>
+      {/* Corner accents */}
+      <div style={{ position: "absolute", top: -1, left: -1, width: 12, height: 12, borderTop: "2px solid var(--cyan)", borderLeft: "2px solid var(--cyan)" }} />
+      <div style={{ position: "absolute", bottom: -1, right: -1, width: 12, height: 12, borderBottom: "2px solid var(--cyan)", borderRight: "2px solid var(--cyan)" }} />
+
+      <p style={{ fontFamily: "Fira Code, monospace", fontSize: 10, color: "var(--cyan)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6 }}>// STEP ACTION REQUIRED</p>
+      <h3 style={{ fontFamily: "Orbitron, sans-serif", fontSize: 18, color: "var(--text-bright)", marginBottom: 16 }}>{STEP_TITLES[stepId] || "Pipeline Action Required"}</h3>
+
+      {renderContent()}
+
+      <div style={{ marginTop: 20, borderTop: "1px solid var(--border-faint)", paddingTop: 16 }}>
+        <button
+          onClick={handleConfirm}
+          disabled={submitting || (stepId === "recommend" && enabledModels.length === 0)}
+          style={{
+            width: "100%",
+            background: "var(--cyan)",
+            color: "black",
+            border: "none",
+            padding: "10px 16px",
+            fontFamily: "Rajdhani, sans-serif",
+            fontWeight: 800,
+            fontSize: 14,
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+            cursor: "pointer",
+            boxShadow: "0 0 15px rgba(0,245,255,0.35)",
+            transition: "all 0.2s",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+          onMouseEnter={e => {
+            if (!(submitting || (stepId === "recommend" && enabledModels.length === 0))) {
+              e.currentTarget.style.boxShadow = "0 0 25px rgba(0,245,255,0.6)";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.boxShadow = "0 0 15px rgba(0,245,255,0.35)";
+            e.currentTarget.style.transform = "none";
+          }}
+        >
+          {submitting ? "Processing Request..." : (
+            <>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={16} height={16}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+              </svg>
+              Confirm & Continue
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
 }

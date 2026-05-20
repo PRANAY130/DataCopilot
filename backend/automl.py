@@ -92,7 +92,11 @@ def safe_float(v):
 
 # ── MAIN PIPELINE ──────────────────────────────────────────────────────────────
 
-def run_pipeline(file_path: str) -> Generator[dict, None, None]:
+def run_pipeline(
+    file_path: str,
+    manual_mode: bool = False,
+    input_queue = None,
+) -> Generator[dict, None, None]:
     """
     Synchronous generator. Yields one event dict per step.
     Designed to run inside a background thread.
@@ -239,6 +243,37 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     # ── STEP 3: TASK DETECTION ─────────────────────────────────────────────────
     yield event("task", "running", {})
     task_type, class_counts, reason = detect_task_type(df, target_col, time_col)
+
+    if manual_mode and input_queue is not None:
+        yield event("task", "paused", {
+            "target_col": target_col,
+            "time_col": time_col,
+            "task_type": task_type,
+            "class_counts": class_counts,
+            "reason": reason,
+            "columns": list(df.columns),
+            "is_imbalanced": (
+                False if task_type in ("Regression", "Time Series", "Clustering") else
+                max(class_counts.values()) / sum(class_counts.values()) > 0.75
+                if class_counts else False
+            )
+        })
+        user_choices = input_queue.get()
+        if isinstance(user_choices, dict):
+            target_col = user_choices.get("target_col", target_col)
+            task_type = user_choices.get("task_type", task_type)
+            time_col = user_choices.get("time_col", time_col)
+            
+            # Recalculate target info
+            task_type, class_counts, reason = detect_task_type(df, target_col, time_col)
+            
+            # Allow user to manually drop columns
+            manual_dropped_cols = user_choices.get("dropped_cols", [])
+            if manual_dropped_cols:
+                valid_drops = [c for c in manual_dropped_cols if c in df.columns and c != target_col]
+                if valid_drops:
+                    df = df.drop(columns=valid_drops)
+
     is_regression = task_type in ("Regression", "Time Series")
     is_clustering = task_type == "Clustering"
     is_time_series = task_type == "Time Series"
@@ -262,8 +297,54 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     shape_before = df.shape
 
     # Drop the target column temporarily for feature processing
-    X = df.drop(columns=[target_col])
-    y = df[target_col].copy()
+    X = df.drop(columns=[target_col]) if target_col in df.columns else df.copy()
+    y = df[target_col].copy() if target_col in df.columns else None
+
+    # --- AUTOMATIC ID DROPPING ---
+    id_cols = []
+    for col in X.columns:
+        col_lower = col.lower()
+        is_id_name = col_lower in {
+            "id", "uuid", "uid", "index", "rowid", "row_id", "serial", 
+            "serial_no", "serial_number", "passengerid", "passenger_id"
+        }
+        is_id_pattern = (col_lower.endswith("id") or col_lower.endswith("_id") or col_lower.startswith("id_"))
+        
+        n_unique = X[col].nunique()
+        total_rows = len(X)
+        
+        is_sequential = False
+        if pd.api.types.is_integer_dtype(X[col]) and n_unique == total_rows:
+            diffs = X[col].sort_values().diff().dropna()
+            if len(diffs) > 0 and (diffs == 1).all():
+                is_sequential = True
+                
+        if is_id_name or (is_id_pattern and n_unique > min(15, total_rows * 0.5)) or is_sequential:
+            id_cols.append(col)
+
+    for col in id_cols:
+        transforms.append({
+            "action": "Dropped (ID Column)",
+            "column": col,
+            "detail": f"Identified as redundant identifier/index column and removed to prevent overfitting.",
+        })
+    if id_cols:
+        X = X.drop(columns=id_cols)
+
+    # Default settings
+    imputation_strategy = "median"
+    scaling_strategy = "standard"
+
+    if manual_mode and input_queue is not None:
+        yield event("preprocess", "paused", {
+            "imputation_strategies": ["median", "mean", "mode"],
+            "scaling_strategies": ["standard", "minmax", "none"],
+            "detected_id_cols": id_cols,
+        })
+        user_choices = input_queue.get()
+        if isinstance(user_choices, dict):
+            imputation_strategy = user_choices.get("imputation_strategy", imputation_strategy)
+            scaling_strategy = user_choices.get("scaling_strategy", scaling_strategy)
 
     # Drop very high null columns (>75%)
     high_null_cols = [c for c in X.columns if X[c].isna().mean() > 0.75]
@@ -282,18 +363,23 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     # Impute numeric
     for col in num_cols:
         if X[col].isna().any():
-            median_val = round(float(X[col].median()), 3)
-            X[col] = X[col].fillna(median_val)
+            if imputation_strategy == "median":
+                fill_val = round(float(X[col].median()), 3)
+            elif imputation_strategy == "mean":
+                fill_val = round(float(X[col].mean()), 3)
+            else: # mode
+                fill_val = round(float(X[col].mode().iloc[0] if not X[col].mode().empty else 0), 3)
+            X[col] = X[col].fillna(fill_val)
             transforms.append({
-                "action": "Imputed (Median)",
+                "action": f"Imputed ({imputation_strategy.capitalize()})",
                 "column": col,
-                "detail": f"Filled {int(df[col].isna().sum())} nulls with median={median_val}",
+                "detail": f"Filled {int(df[col].isna().sum())} nulls with {imputation_strategy}={fill_val}",
             })
 
     # Impute categorical
     for col in cat_cols:
         if X[col].isna().any():
-            mode_val = str(X[col].mode().iloc[0])
+            mode_val = str(X[col].mode().iloc[0] if not X[col].mode().empty else "missing")
             X[col] = X[col].fillna(mode_val)
             transforms.append({
                 "action": "Imputed (Mode)",
@@ -304,11 +390,15 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
     # Encode target for classification
     from sklearn.preprocessing import LabelEncoder
     le = LabelEncoder()
-    if not is_regression:
+    if not is_regression and y is not None:
         y = le.fit_transform(y.astype(str))
         label_mapping = {str(cls): int(i) for i, cls in enumerate(le.classes_)}
     else:
-        y = pd.to_numeric(y, errors="coerce").fillna(y.median())
+        if y is not None:
+            # Handle possible nulls in continuous target
+            y = pd.to_numeric(y, errors="coerce")
+            if y.isna().any():
+                y = y.fillna(y.median() if not y.isna().all() else 0)
         label_mapping = {}
 
     # One-hot encode categorical features
@@ -330,17 +420,24 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
                 "detail": f"{n_unique} unique values — high cardinality, label encoded",
             })
 
-    # Standard scale numeric
-    from sklearn.preprocessing import StandardScaler
-    if num_cols:
-        scaler = StandardScaler()
+    # Scale numeric
+    if num_cols and scaling_strategy != "none":
+        if scaling_strategy == "standard":
+            from sklearn.preprocessing import StandardScaler
+            scaler = StandardScaler()
+            detail_str = f"Scaled {len(num_cols)} numeric features to zero mean, unit variance"
+        else: # minmax
+            from sklearn.preprocessing import MinMaxScaler
+            scaler = MinMaxScaler()
+            detail_str = f"Scaled {len(num_cols)} numeric features to [0, 1] range"
+            
         existing_num = [c for c in num_cols if c in X.columns]
         if existing_num:
             X[existing_num] = scaler.fit_transform(X[existing_num])
             transforms.append({
-                "action": "Standard Scaled",
+                "action": f"{scaling_strategy.capitalize()} Scaled",
                 "column": ", ".join(existing_num),
-                "detail": f"Scaled {len(existing_num)} numeric features to zero mean, unit variance",
+                "detail": detail_str,
             })
 
     feature_names = list(X.columns)
@@ -537,6 +634,44 @@ def run_pipeline(file_path: str) -> Generator[dict, None, None]:
                 "model": MLPClassifier(hidden_layer_sizes=(100,), max_iter=500, random_state=42),
             },
         ]
+    if manual_mode and input_queue is not None:
+        yield event("recommend", "paused", {
+            "models": [{"id": m["id"], "name": m["name"], "reason": m["reason"], "params": m["params"]}
+                       for m in candidate_models],
+        })
+        user_choices = input_queue.get()
+        if isinstance(user_choices, dict):
+            enabled_ids = user_choices.get("enabled_model_ids")
+            if enabled_ids is not None:
+                candidate_models = [m for m in candidate_models if m["id"] in enabled_ids]
+            
+            # Allow tweaking params
+            custom_params = user_choices.get("model_params")
+            if custom_params and isinstance(custom_params, dict):
+                for m in candidate_models:
+                    mid = m["id"]
+                    if mid in custom_params and isinstance(custom_params[mid], dict):
+                        for pk, pv in custom_params[mid].items():
+                            try:
+                                if isinstance(pv, str):
+                                    if pv.isdigit():
+                                        pv = int(pv)
+                                    else:
+                                        try:
+                                            pv = float(pv)
+                                        except ValueError:
+                                            pass
+                            except Exception:
+                                pass
+                            m["params"][pk] = pv
+                        
+                        try:
+                            if hasattr(m["model"], "set_params"):
+                                m["model"].set_params(**m["params"])
+                            elif hasattr(m["model"], "kwargs"):  # StatsmodelsWrapper
+                                m["model"].kwargs.update(m["params"])
+                        except Exception as pe:
+                            logger.warning(f"Failed to set custom params for {mid}: {pe}")
 
     yield event("recommend", "done", {
         "models": [{"id": m["id"], "name": m["name"], "reason": m["reason"], "params": m["params"]}
