@@ -14,6 +14,9 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  
+  
+  
   useEffect(() => {
     if (!sessionId) return;
     const headers: Record<string,string> = {};
@@ -23,6 +26,9 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
       .finally(() => setLoading(false));
   }, [sessionId, authHeader]);
 
+
+
+  // ── Early returns (after all hooks) ──────────────────────────────────────────
   if (loading) return (
     <main style={{background:"var(--bg-void)",minHeight:"100vh"}} className="cyber-grid-sm">
       <Navbar />
@@ -56,6 +62,7 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
   const isTimeSeries = task.task_type === "Time Series";
   const isDone = session?.status === "done";
 
+
   if (!isDone && metrics.length === 0) return (
     <main style={{background:"var(--bg-void)",minHeight:"100vh"}} className="cyber-grid-sm">
       <Navbar />
@@ -84,7 +91,7 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
     <main style={{background:"var(--bg-void)",minHeight:"100vh"}} className="cyber-grid-sm">
       <Navbar />
       <div style={{maxWidth:1300,margin:"0 auto",padding:"100px 24px 80px"}}>
-        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:16,marginBottom:40}}>
+        <div style={{display:"flex",alignItems:"flex-start",justify:"space-between",justifyContent:"space-between",flexWrap:"wrap",gap:16,marginBottom:40}}>
           <div>
             <p className="section-eyebrow" style={{color:"var(--cyan)"}}>// ANALYSIS RESULTS</p>
             <h1 style={{fontFamily:"Orbitron, sans-serif",fontWeight:700,fontSize:"clamp(1.5rem,3vw,2.4rem)",color:"var(--text-bright)",marginBottom:8}}>
@@ -112,108 +119,111 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
           </div>
         </div>
 
-        {/* Metric cards */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:1,background:"var(--border-faint)",border:"1px solid var(--border-faint)",marginBottom:28}}>
-          {[
-            {label:"Best Model", value: best.model || "—", color:"var(--cyan)"},
-            isClustering
-              ? {label:"Silhouette", value: best.silhouette?.toFixed(4)||"—", color:"var(--green)"}
-              : {label: isReg||isTimeSeries?"R² Score":"Accuracy", value: isReg||isTimeSeries?(best.r2||"—"):best.accuracy?`${(best.accuracy*100).toFixed(1)}%`:"—", color:"var(--green)"},
-            isClustering
-              ? {label:"Davies-Bouldin", value: best.davies_bouldin?.toFixed(4)||"—", color:"var(--purple)"}
-              : {label: isReg||isTimeSeries?"MAE":"ROC-AUC", value: isReg||isTimeSeries?(best.mae||"—"):(best.auc||"—"), color:"var(--purple)"},
-            isClustering
-              ? {label:"Clusters", value: "—", color:"var(--pink)"}
-              : {label: isTimeSeries?"MAPE":isReg?"RMSE":"F1-Score", value: isTimeSeries?(best.mape||"—"):isReg?(best.rmse||"—"):(best.f1||"—"), color:"var(--pink)"},
-          ].map(m=>(
-            <div key={m.label} style={{padding:"24px 20px",background:"var(--bg-card)",textAlign:"center"}}>
-              <div style={{fontFamily:"Orbitron, sans-serif",fontWeight:700,fontSize:"1.8rem",color:m.color,marginBottom:6}}>{m.value}</div>
-              <div style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",letterSpacing:"0.12em",textTransform:"uppercase"}}>{m.label}</div>
+                <div>
+            {/* Metric cards */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:1,background:"var(--border-faint)",border:"1px solid var(--border-faint)",marginBottom:28}}>
+              {[
+                {label:"Best Model", value: best.model || "—", color:"var(--cyan)"},
+                isClustering
+                  ? {label:"Silhouette", value: best.silhouette?.toFixed(4)||"—", color:"var(--green)"}
+                  : {label: isReg||isTimeSeries?"R² Score":"Accuracy", value: isReg||isTimeSeries?(best.r2||"—"):best.accuracy?`${(best.accuracy*100).toFixed(1)}%`:"—", color:"var(--green)"},
+                isClustering
+                  ? {label:"Davies-Bouldin", value: best.davies_bouldin?.toFixed(4)||"—", color:"var(--purple)"}
+                  : {label: isReg||isTimeSeries?"MAE":"ROC-AUC", value: isReg||isTimeSeries?(best.mae||"—"):(best.auc||"—"), color:"var(--purple)"},
+                isClustering
+                  ? {label:"Clusters", value: "—", color:"var(--pink)"}
+                  : {label: isTimeSeries?"MAPE":isReg?"RMSE":"F1-Score", value: isTimeSeries?(best.mape||"—"):isReg?(best.rmse||"—"):(best.f1||"—"), color:"var(--pink)"},
+              ].map(m=>(
+                <div key={m.label} style={{padding:"24px 20px",background:"var(--bg-card)",textAlign:"center"}}>
+                  <div style={{fontFamily:"Orbitron, sans-serif",fontWeight:700,fontSize:"1.8rem",color:m.color,marginBottom:6}}>{m.value}</div>
+                  <div style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",letterSpacing:"0.12em",textTransform:"uppercase"}}>{m.label}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:24}}>
-          {/* Model comparison */}
-          <CyberCard noPad>
-            <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border-faint)"}}>
-              <p style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--cyan)",letterSpacing:"0.14em",textTransform:"uppercase"}}>// Model Comparison</p>
-            </div>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead>
-                <tr style={{borderBottom:"1px solid var(--border-faint)"}}>
-                  {isClustering
-                    ? ["Model", "Silhouette", "Davies-Bouldin", ""].map(h=>(
-                      <th key={h} style={{padding:"10px 14px",fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",textAlign:"left"}}>{h}</th>
-                    ))
-                    : isTimeSeries
-                    ? ["Model", "R²", "MAE", "MAPE"].map(h=>(
-                      <th key={h} style={{padding:"10px 14px",fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",textAlign:"left"}}>{h}</th>
-                    ))
-                    : ["Model", isReg?"R²":"Acc", isReg?"MAE":"F1", isReg?"RMSE":"AUC"].map(h=>(
-                    <th key={h} style={{padding:"10px 14px",fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",textAlign:"left"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {metrics.map((m:any)=>(
-                  <tr key={m.model} style={{borderBottom:"1px solid var(--border-faint)"}}>
-                    <td style={{padding:"11px 14px",fontFamily:"Rajdhani, sans-serif",fontWeight:m.is_best?700:400,fontSize:14,color:m.is_best?"var(--cyan)":"var(--text-primary)"}}>
-                      {m.model} {m.is_best&&<span style={{fontFamily:"Fira Code, monospace",fontSize:9,color:"var(--green)",border:"1px solid var(--green)",padding:"1px 4px",marginLeft:6}}>BEST</span>}
-                    </td>
-                    <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isClustering?m.silhouette:(isReg||isTimeSeries?m.r2:m.accuracy?`${(m.accuracy*100).toFixed(1)}%`:"—")}</td>
-                    <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isClustering?m.davies_bouldin:(isReg||isTimeSeries?m.mae:m.f1)}</td>
-                    <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isClustering?"":(isTimeSeries?m.mape:(isReg?m.rmse:m.auc))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CyberCard>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:24}}>
+              {/* Model comparison */}
+              <CyberCard noPad>
+                <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border-faint)"}}>
+                  <p style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--cyan)",letterSpacing:"0.14em",textTransform:"uppercase"}}>// Model Comparison</p>
+                </div>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead>
+                    <tr style={{borderBottom:"1px solid var(--border-faint)"}}>
+                      {isClustering
+                        ? ["Model", "Silhouette", "Davies-Bouldin", ""].map(h=>(
+                          <th key={h} style={{padding:"10px 14px",fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",textAlign:"left"}}>{h}</th>
+                        ))
+                        : isTimeSeries
+                        ? ["Model", "R²", "MAE", "MAPE"].map(h=>(
+                          <th key={h} style={{padding:"10px 14px",fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",textAlign:"left"}}>{h}</th>
+                        ))
+                        : ["Model", isReg?"R²":"Acc", isReg?"MAE":"F1", isReg?"RMSE":"AUC"].map(h=>(
+                        <th key={h} style={{padding:"10px 14px",fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",textAlign:"left"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.map((m:any)=>(
+                      <tr key={m.model} style={{borderBottom:"1px solid var(--border-faint)"}}>
+                        <td style={{padding:"11px 14px",fontFamily:"Rajdhani, sans-serif",fontWeight:m.is_best?700:400,fontSize:14,color:m.is_best?"var(--cyan)":"var(--text-primary)"}}>
+                          {m.model} {m.is_best&&<span style={{fontFamily:"Fira Code, monospace",fontSize:9,color:"var(--green)",border:"1px solid var(--green)",padding:"1px 4px",marginLeft:6}}>BEST</span>}
+                        </td>
+                        <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isClustering?m.silhouette:(isReg||isTimeSeries?m.r2:m.accuracy?`${(m.accuracy*100).toFixed(1)}%`:"—")}</td>
+                        <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isClustering?m.davies_bouldin:(isReg||isTimeSeries?m.mae:m.f1)}</td>
+                        <td style={{padding:"11px 14px",fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{isClustering?"":(isTimeSeries?m.mape:(isReg?m.rmse:m.auc))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CyberCard>
 
-          {/* SHAP */}
-          {features.length > 0 && (
-          <CyberCard noPad>
-            <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border-faint)"}}>
-              <p style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--purple)",letterSpacing:"0.14em",textTransform:"uppercase"}}>// SHAP Feature Importance</p>
+              {/* SHAP */}
+              {features.length > 0 && (
+              <CyberCard noPad>
+                <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border-faint)"}}>
+                  <p style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--purple)",letterSpacing:"0.14em",textTransform:"uppercase"}}>// SHAP Feature Importance</p>
+                </div>
+                <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:12}}>
+                  {features.slice(0,7).map((f:any,i:number)=>{
+                    const colors=["var(--cyan)","var(--purple)","var(--pink)","var(--green)","var(--amber)","var(--cyan)","var(--purple)"];
+                    const c=colors[i];
+                    const max=features[0]?.importance||1;
+                    return (
+                      <div key={f.name}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                          <span style={{fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{f.name}</span>
+                          <span style={{fontFamily:"Fira Code, monospace",fontSize:11,color:c}}>{f.importance?.toFixed(4)}</span>
+                        </div>
+                        <div style={{height:5,background:"var(--bg-panel)",borderRadius:3}}>
+                          <div style={{height:"100%",width:`${(f.importance/max)*100}%`,background:c,borderRadius:3,boxShadow:`0 0 8px ${c}80`,maxWidth:"100%"}}/>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CyberCard>
+              )}
             </div>
-            <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:12}}>
-              {features.slice(0,7).map((f:any,i:number)=>{
-                const colors=["var(--cyan)","var(--purple)","var(--pink)","var(--green)","var(--amber)","var(--cyan)","var(--purple)"];
-                const c=colors[i];
-                const max=features[0]?.importance||1;
-                return (
-                  <div key={f.name}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                      <span style={{fontFamily:"Fira Code, monospace",fontSize:12,color:"var(--text-primary)"}}>{f.name}</span>
-                      <span style={{fontFamily:"Fira Code, monospace",fontSize:11,color:c}}>{f.importance?.toFixed(4)}</span>
-                    </div>
-                    <div style={{height:5,background:"var(--bg-panel)",borderRadius:3}}>
-                      <div style={{height:"100%",width:`${(f.importance/max)*100}%`,background:c,borderRadius:3,boxShadow:`0 0 8px ${c}80`,maxWidth:"100%"}}/>
-                    </div>
+
+            {/* AI Insight */}
+            {session?.ai_insight && (
+              <CyberCard accent="purple">
+                <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
+                  <div style={{width:40,height:40,border:"1px solid var(--purple)",background:"rgba(191,0,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--purple)" strokeWidth={1.5} width={20} height={20}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
+                    </svg>
                   </div>
-                );
-              })}
-            </div>
-          </CyberCard>
-          )}
-        </div>
-
-        {/* AI Insight */}
-        {session?.ai_insight && (
-          <CyberCard accent="purple">
-            <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
-              <div style={{width:40,height:40,border:"1px solid var(--purple)",background:"rgba(191,0,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="var(--purple)" strokeWidth={1.5} width={20} height={20}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
-                </svg>
-              </div>
-              <div>
-                <p style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--purple)",letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:8}}>// AI INSIGHT</p>
-                <p style={{fontFamily:"Inter, sans-serif",fontSize:14,color:"var(--text-muted)",lineHeight:1.7}}>{session.ai_insight}</p>
-              </div>
-            </div>
-          </CyberCard>
-        )}
+                  <div>
+                    <p style={{fontFamily:"Fira Code, monospace",fontSize:10,color:"var(--purple)",letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:8}}>// AI INSIGHT</p>
+                    <p style={{fontFamily:"Inter, sans-serif",fontSize:14,color:"var(--text-muted)",lineHeight:1.7}}>{session.ai_insight}</p>
+                  </div>
+                </div>
+              </CyberCard>
+            )}
+          </div>
+        
       </div>
     </main>
   );

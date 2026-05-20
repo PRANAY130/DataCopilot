@@ -27,6 +27,7 @@ interface SessionContextType {
   startSession: (sessionId: string, idToken: string | null, mode?: string) => void;
   loadSessionFromApi: (sessionId: string, idToken: string | null) => Promise<void>;
   resumePipeline: (stepId: string, config: Record<string, any>) => void;
+  setUploadedFile: (filename: string, content: string) => void;
 }
 
 const STEP_IDS = ["upload", "analyze", "task", "preprocess", "recommend", "train", "evaluate", "shap", "viz"];
@@ -39,6 +40,7 @@ const SessionContext = createContext<SessionContextType>({
   startSession: () => {},
   loadSessionFromApi: async () => {},
   resumePipeline: () => {},
+  setUploadedFile: () => {},
 });
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -48,6 +50,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const activeSessionIdRef = useRef<string | null>(null);
   // Timer ref — StrictMode cleanup cancels this before WS ever opens
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // In-memory holder for raw uploaded dataset file content
+  const uploadedFileRef = useRef<{ filename: string; content: string } | null>(null);
+
+  const setUploadedFile = (filename: string, content: string) => {
+    uploadedFileRef.current = { filename, content };
+  };
 
   const startSession = (sessionId: string, idToken: string | null, mode?: string) => {
     // Session already done — no need to reconnect
@@ -100,6 +108,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ws.onopen = () => {
         if (wsRef.current !== ws) { ws.close(); return; }
         setSession(prev => prev ? { ...prev, connected: true } : prev);
+
+        const pendingFile = uploadedFileRef.current;
+        if (pendingFile) {
+          ws.send(JSON.stringify({
+            action: "start",
+            file_content: pendingFile.content
+          }));
+          // Clear ref immediately to free browser memory
+          uploadedFileRef.current = null;
+        } else {
+          ws.send(JSON.stringify({
+            action: "start"
+          }));
+        }
       };
 
       ws.onmessage = (evt) => {
@@ -219,7 +241,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SessionContext.Provider value={{ session, startSession, loadSessionFromApi, resumePipeline }}>
+    <SessionContext.Provider value={{ session, startSession, loadSessionFromApi, resumePipeline, setUploadedFile }}>
       {children}
     </SessionContext.Provider>
   );

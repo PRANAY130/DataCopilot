@@ -90,12 +90,145 @@ def safe_float(v):
         return None
 
 
+class StatsmodelsWrapper:
+    def __init__(self, model_class, **kwargs):
+        self.model_class = model_class
+        self.kwargs = kwargs
+        self.model_ = None
+
+    def fit(self, X, y):
+        from statsmodels.tsa.arima.model import ARIMA
+        if self.model_class == ARIMA:
+            self.model_ = self.model_class(y, **self.kwargs).fit()
+        else:
+            self.model_ = self.model_class(y, **self.kwargs).fit()
+        return self
+
+    def predict(self, X):
+        return self.model_.forecast(steps=len(X))
+
+    def score(self, X, y):
+        from sklearn.metrics import r2_score
+        return r2_score(y, self.predict(X))
+
+
+def predict_model_pack(model_pack, df_raw: pd.DataFrame) -> dict:
+    """
+    Given a model pack (dictionary of serialized models and preprocessing configs)
+    and a raw DataFrame of input rows, perform identical preprocessing and yield predictions.
+    """
+    df = df_raw.copy()
+    
+    # 1. Extract properties
+    task_type = model_pack.get("task_type")
+    target_col = model_pack.get("target_col")
+    id_cols = model_pack.get("id_cols", [])
+    high_null_cols = model_pack.get("high_null_cols", [])
+    cat_cols = model_pack.get("cat_cols", [])
+    num_cols = model_pack.get("num_cols", [])
+    imputation_strategy = model_pack.get("imputation_strategy", "median")
+    scaling_strategy = model_pack.get("scaling_strategy", "none")
+    feature_names = model_pack.get("feature_names", [])
+    imputer_values = model_pack.get("imputer_values", {})
+    cat_modes = model_pack.get("cat_modes", {})
+    scaler = model_pack.get("scaler")
+    label_mapping = model_pack.get("label_mapping", {})
+    label_encoders = model_pack.get("label_encoders", {})
+    model = model_pack.get("model")
+    is_regression = model_pack.get("is_regression", False)
+    is_clustering = model_pack.get("is_clustering", False)
+    is_time_series = model_pack.get("is_time_series", False)
+
+    # Remove target column if present
+    if target_col and target_col in df.columns:
+        df = df.drop(columns=[target_col])
+
+    # 2. Impute numeric columns
+    for col in num_cols:
+        fill_val = imputer_values.get(col, 0.0)
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(fill_val)
+        else:
+            df[col] = fill_val
+
+    # 3. Impute categorical columns
+    for col in cat_cols:
+        fill_val = cat_modes.get(col, "missing")
+        if col in df.columns:
+            df[col] = df[col].astype(str).fillna(fill_val)
+        else:
+            df[col] = fill_val
+
+    # 4. Encode high cardinality categoricals
+    for col in cat_cols:
+        if col in label_encoders:
+            col_le = label_encoders[col]
+            if col in df.columns:
+                classes_set = set(col_le.classes_)
+                df[col] = df[col].astype(str).apply(lambda x: x if x in classes_set else col_le.classes_[0])
+                df[col] = col_le.transform(df[col])
+            else:
+                df[col] = 0
+
+    # 5. Align with one-hot columns exactly
+    X_pred = pd.DataFrame(index=df.index)
+    for col in feature_names:
+        if col in num_cols:
+            X_pred[col] = df[col].astype(float)
+        elif col in label_encoders:
+            X_pred[col] = df[col].astype(float)
+        else:
+            found_orig = False
+            for orig_cat in cat_cols:
+                if col.startswith(orig_cat + "_"):
+                    suffix = col[len(orig_cat) + 1:]
+                    if orig_cat in df.columns:
+                        X_pred[col] = (df[orig_cat].astype(str) == suffix).astype(float)
+                    else:
+                        X_pred[col] = 0.0
+                    found_orig = True
+                    break
+            if not found_orig:
+                X_pred[col] = 0.0
+
+    # 6. Scale features
+    if scaler and scaling_strategy != "none":
+        existing_num = [c for c in num_cols if c in X_pred.columns]
+        if existing_num:
+            X_pred[existing_num] = scaler.transform(X_pred[existing_num])
+
+    # Ensure feature order matches exactly
+    X_pred = X_pred[feature_names]
+
+    # 7. Predict
+    preds = model.predict(X_pred.values.astype(np.float32))
+
+    probs = None
+    if not is_regression and not is_clustering and not is_time_series and hasattr(model, "predict_proba"):
+        try:
+            probs = model.predict_proba(X_pred.values.astype(np.float32)).tolist()
+        except Exception:
+            pass
+
+    mapped_preds = preds.tolist()
+    if label_mapping:
+        inv_label_mapping = {v: k for k, v in label_mapping.items()}
+        mapped_preds = [inv_label_mapping.get(int(p), str(p)) for p in preds]
+
+    return {
+        "predictions": mapped_preds,
+        "probabilities": probs,
+    }
+
+
+
 # ── MAIN PIPELINE ──────────────────────────────────────────────────────────────
 
 def run_pipeline(
     file_path: str,
     manual_mode: bool = False,
     input_queue = None,
+    session_id: str = "default",
 ) -> Generator[dict, None, None]:
     """
     Synchronous generator. Yields one event dict per step.
@@ -389,10 +522,12 @@ def run_pipeline(
 
     # Encode target for classification
     from sklearn.preprocessing import LabelEncoder
-    le = LabelEncoder()
+    label_encoders = {}
+    target_encoder = None
     if not is_regression and y is not None:
-        y = le.fit_transform(y.astype(str))
-        label_mapping = {str(cls): int(i) for i, cls in enumerate(le.classes_)}
+        target_encoder = LabelEncoder()
+        y = target_encoder.fit_transform(y.astype(str))
+        label_mapping = {str(cls): int(i) for i, cls in enumerate(target_encoder.classes_)}
     else:
         if y is not None:
             # Handle possible nulls in continuous target
@@ -413,12 +548,36 @@ def run_pipeline(
                 "detail": f"{n_unique} unique values → {len(dummies.columns)} binary features",
             })
         else:
-            X[col] = le.fit_transform(X[col].astype(str))
+            col_le = LabelEncoder()
+            X[col] = col_le.fit_transform(X[col].astype(str))
+            label_encoders[col] = col_le
             transforms.append({
                 "action": "Label Encoded",
                 "column": col,
                 "detail": f"{n_unique} unique values — high cardinality, label encoded",
             })
+
+    # Pre-calculate imputer and category modes values for all features to serialize
+    imputer_values = {}
+    for col in num_cols:
+        try:
+            if imputation_strategy == "median":
+                val = float(df_raw[col].median())
+            elif imputation_strategy == "mean":
+                val = float(df_raw[col].mean())
+            else:
+                val = float(df_raw[col].mode().iloc[0] if not df_raw[col].mode().empty else 0.0)
+        except Exception:
+            val = 0.0
+        imputer_values[col] = round(val, 3)
+
+    cat_modes = {}
+    for col in cat_cols:
+        try:
+            val = str(df_raw[col].mode().iloc[0] if not df_raw[col].mode().empty else "missing")
+        except Exception:
+            val = "missing"
+        cat_modes[col] = val
 
     # Scale numeric
     if num_cols and scaling_strategy != "none":
@@ -491,23 +650,6 @@ def run_pipeline(
         from statsmodels.tsa.holtwinters import ExponentialSmoothing
         from statsmodels.tsa.arima.model import ARIMA
         
-        class StatsmodelsWrapper:
-            def __init__(self, model_class, **kwargs):
-                self.model_class = model_class
-                self.kwargs = kwargs
-                self.model_ = None
-            def fit(self, X, y):
-                if self.model_class == ARIMA:
-                    self.model_ = self.model_class(y, **self.kwargs).fit()
-                else:
-                    self.model_ = self.model_class(y, **self.kwargs).fit()
-                return self
-            def predict(self, X):
-                return self.model_.forecast(steps=len(X))
-            def score(self, X, y):
-                from sklearn.metrics import r2_score
-                return r2_score(y, self.predict(X))
-
         candidate_models = [
             {
                 "id": "ets",
@@ -687,6 +829,19 @@ def run_pipeline(
     X_arr = X.values.astype(np.float32)
     y_arr = np.array(y) if not is_clustering else None
 
+    # Dynamically cap KNN n_neighbors to prevent errors on small datasets
+    n_samples = len(X_arr)
+    for m_info in candidate_models:
+        if m_info["id"] in ("knn",):
+            max_neighbors = max(1, n_samples - 1)
+            current_k = m_info.get("params", {}).get("n_neighbors", 5)
+            if current_k > max_neighbors:
+                safe_k = max(1, max_neighbors)
+                m_info["params"]["n_neighbors"] = safe_k
+                if hasattr(m_info["model"], "set_params"):
+                    m_info["model"].set_params(n_neighbors=safe_k)
+                logger.info(f"Reduced KNN n_neighbors from {current_k} to {safe_k} for dataset with {n_samples} samples")
+
     # Limit folds for small datasets
     n_splits = min(5, max(2, len(X_arr) // 30))
     if is_time_series:
@@ -708,67 +863,84 @@ def run_pipeline(
         model = m_info["model"]
         fold_scores = []
         
-        if is_clustering:
-            yield event("train", "log", {
-                "model_id": m_info["id"],
-                "model_name": m_info["name"],
-                "log": f"[{m_info['name']}] Fitting on full dataset...",
-            })
-            model.fit(X_arr)
-            labels = model.labels_ if hasattr(model, "labels_") else model.predict(X_arr)
-            score = silhouette_score(X_arr, labels) if len(np.unique(labels)) > 1 else 0
-            score = round(float(score), 4)
-            fold_scores.append(score)
-            mean_score = score
-            metric_label = "Silhouette Score"
-            
-            yield event("train", "log", {
-                "model_id": m_info["id"],
-                "model_name": m_info["name"],
-                "log": f"[{m_info['name']}] ✓ Complete. {metric_label}: {score:.4f}",
-            })
-        else:
-            yield event("train", "log", {
-                "model_id": m_info["id"],
-                "model_name": m_info["name"],
-                "log": f"[{m_info['name']}] Starting {n_splits}-Fold Cross-Validation...",
-            })
-
-            for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X_arr, y_arr if not is_regression and not is_time_series else None)):
-                X_train, X_val = X_arr[train_idx], X_arr[val_idx]
-                y_train, y_val = y_arr[train_idx], y_arr[val_idx]
-
-                model.fit(X_train, y_train)
-
-                if is_regression or is_time_series:
-                    try:
-                        score = model.score(X_val, y_val)  # R²
-                    except Exception:
-                        from sklearn.metrics import r2_score
-                        preds = model.predict(X_val)
-                        score = r2_score(y_val, preds)
-                else:
-                    score = (model.predict(X_val) == y_val).mean()
-
-                score = round(float(score), 4)
-                fold_scores.append(score)
-
-                metric_label = "R²" if (is_regression or is_time_series) else "Accuracy"
+        try:
+            if is_clustering:
                 yield event("train", "log", {
                     "model_id": m_info["id"],
                     "model_name": m_info["name"],
-                    "log": f"[{m_info['name']}] Fold {fold_idx+1}/{n_splits} → CV {metric_label}: {score:.4f}",
+                    "log": f"[{m_info['name']}] Fitting on full dataset...",
+                })
+                model.fit(X_arr)
+                labels = model.labels_ if hasattr(model, "labels_") else model.predict(X_arr)
+                score = silhouette_score(X_arr, labels) if len(np.unique(labels)) > 1 else 0
+                score = round(float(score), 4)
+                fold_scores.append(score)
+                mean_score = score
+                metric_label = "Silhouette Score"
+                
+                yield event("train", "log", {
+                    "model_id": m_info["id"],
+                    "model_name": m_info["name"],
+                    "log": f"[{m_info['name']}] ✓ Complete. {metric_label}: {score:.4f}",
+                })
+            else:
+                yield event("train", "log", {
+                    "model_id": m_info["id"],
+                    "model_name": m_info["name"],
+                    "log": f"[{m_info['name']}] Starting {n_splits}-Fold Cross-Validation...",
                 })
 
-            mean_score = round(float(np.mean(fold_scores)), 4)
-            
+                for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X_arr, y_arr if not is_regression and not is_time_series else None)):
+                    X_train, X_val = X_arr[train_idx], X_arr[val_idx]
+                    y_train, y_val = y_arr[train_idx], y_arr[val_idx]
+
+                    model.fit(X_train, y_train)
+
+                    if is_regression or is_time_series:
+                        try:
+                            score = model.score(X_val, y_val)  # R²
+                        except Exception:
+                            from sklearn.metrics import r2_score
+                            preds = model.predict(X_val)
+                            score = r2_score(y_val, preds)
+                    else:
+                        score = (model.predict(X_val) == y_val).mean()
+
+                    score = round(float(score), 4)
+                    fold_scores.append(score)
+
+                    metric_label = "R²" if (is_regression or is_time_series) else "Accuracy"
+                    yield event("train", "log", {
+                        "model_id": m_info["id"],
+                        "model_name": m_info["name"],
+                        "log": f"[{m_info['name']}] Fold {fold_idx+1}/{n_splits} → CV {metric_label}: {score:.4f}",
+                    })
+
+                mean_score = round(float(np.mean(fold_scores)), 4)
+                
+                yield event("train", "log", {
+                    "model_id": m_info["id"],
+                    "model_name": m_info["name"],
+                    "log": f"[{m_info['name']}] ✓ Complete. Mean CV {metric_label}: {mean_score:.4f}",
+                })
+
+            cv_results[m_info["id"]] = {"folds": fold_scores, "mean": mean_score}
+
+        except Exception as model_train_err:
+            logger.warning(f"Model {m_info['name']} failed during training: {model_train_err}")
             yield event("train", "log", {
                 "model_id": m_info["id"],
                 "model_name": m_info["name"],
-                "log": f"[{m_info['name']}] ✓ Complete. Mean CV {metric_label}: {mean_score:.4f}",
+                "log": f"[{m_info['name']}] ⚠ Skipped — {str(model_train_err)[:120]}",
             })
+            # Assign a score of -inf so this model is never selected as best
+            cv_results[m_info["id"]] = {"folds": [], "mean": float("-inf")}
 
-        cv_results[m_info["id"]] = {"folds": fold_scores, "mean": mean_score}
+    # Remove models that completely failed (mean=-inf) from candidate_models for evaluation
+    candidate_models = [m for m in candidate_models if cv_results.get(m["id"], {}).get("mean", float("-inf")) > float("-inf")]
+    if not candidate_models:
+        yield event("train", "error", {"error": "All models failed during cross-validation. Check your dataset."})
+        return
 
     # Build summary log lines for persistence (mirrors what was streamed live)
     summary_logs = {}
@@ -812,10 +984,26 @@ def run_pipeline(
             X_arr, y_arr, test_size=0.2, shuffle=False
         )
     else:
-        X_train_f, X_test_f, y_train_f, y_test_f = train_test_split(
-            X_arr, y_arr, test_size=0.2, random_state=42,
-            stratify=y_arr if not is_regression else None
-        )
+        n_total = len(X_arr)
+        n_classes = len(np.unique(y_arr)) if not is_regression else 1
+        # For very small datasets: need at least n_classes samples in test set
+        # Use test_size=max(n_classes, 1) if the computed 0.2 split gives too few
+        computed_test_n = max(1, int(n_total * 0.2))
+        if computed_test_n < n_classes or n_total <= n_classes * 2:
+            # Dataset too small for a proper split — use full data for eval
+            X_train_f, X_test_f = X_arr, X_arr
+            y_train_f, y_test_f = y_arr, y_arr
+        else:
+            try:
+                X_train_f, X_test_f, y_train_f, y_test_f = train_test_split(
+                    X_arr, y_arr, test_size=0.2, random_state=42,
+                    stratify=y_arr if not is_regression else None
+                )
+            except ValueError:
+                # Fallback: no stratification
+                X_train_f, X_test_f, y_train_f, y_test_f = train_test_split(
+                    X_arr, y_arr, test_size=max(1, computed_test_n), random_state=42
+                )
 
     # Select best model by CV score
     best_id = max(cv_results, key=lambda k: cv_results[k]["mean"])
@@ -897,6 +1085,50 @@ def run_pipeline(
                 roc_tpr = [round(float(v), 4) for v in tpr.tolist()]
             except Exception:
                 pass
+
+    # --- FULL FIT & SERIALIZATION ---
+    try:
+        import pickle
+        best_model_full = best_model_info["model"]
+        X_arr_full = X.values.astype(np.float32)
+        
+        if is_clustering:
+            best_model_full.fit(X_arr_full)
+        else:
+            y_arr_full = np.array(y)
+            best_model_full.fit(X_arr_full, y_arr_full)
+            
+        model_pack = {
+            "session_id": session_id,
+            "task_type": task_type,
+            "target_col": target_col,
+            "id_cols": id_cols,
+            "high_null_cols": high_null_cols,
+            "cat_cols": cat_cols,
+            "num_cols": num_cols,
+            "imputation_strategy": imputation_strategy,
+            "scaling_strategy": scaling_strategy,
+            "feature_names": feature_names,
+            "imputer_values": imputer_values,
+            "cat_modes": cat_modes,
+            "scaler": scaler if (scaling_strategy != "none" and 'scaler' in locals()) else None,
+            "label_mapping": label_mapping,
+            "target_encoder": target_encoder,
+            "label_encoders": label_encoders,
+            "model": best_model_full,
+            "is_regression": is_regression,
+            "is_clustering": is_clustering,
+            "is_time_series": is_time_series,
+        }
+        
+        models_dir = Path(__file__).parent / "workspace" / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        model_filepath = models_dir / f"{session_id}.pkl"
+        with open(model_filepath, "wb") as f:
+            pickle.dump(model_pack, f, protocol=pickle.HIGHEST_PROTOCOL)
+        logger.info(f"Saved complete model pack for session {session_id} to {model_filepath}")
+    except Exception as save_err:
+        logger.error(f"Failed to fit and serialize best model pack: {save_err}")
 
     yield event("evaluate", "done", {
         "metrics": metrics,

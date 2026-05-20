@@ -46,7 +46,7 @@ export default function UploadZone() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const authHeader = useAuthHeader();
-  const { startSession } = useSession();
+  const { startSession, setUploadedFile } = useSession();
 
   const [file, setFile] = useState<File | null>(null);
   const [selectedDemoId, setSelectedDemoId] = useState<string | null>(null);
@@ -166,6 +166,17 @@ export default function UploadZone() {
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Failed to load demo");
         sessionId = (await res.json()).session_id;
       } else if (file) {
+        // Read file client-side as text first
+        const fileContent = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = (e) => resolve(e.target?.result as string);
+          r.onerror = () => reject(new Error("Failed to read file client-size."));
+          r.readAsText(file);
+        });
+
+        // Store the file content in context before initiating session
+        setUploadedFile(file.name, fileContent);
+
         const formData = new FormData();
         formData.append("file", file);
         const res = await fetch(`${BACKEND_URL}/api/upload`, { method: "POST", headers, body: formData });

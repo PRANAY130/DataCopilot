@@ -39,7 +39,7 @@ from session_store import (
     append_chat, get_chat_history,
 )
 from data_provider import get_demo_path, list_demos
-from automl import run_pipeline
+from automl import run_pipeline, predict_model_pack
 from chat_agent import get_chat_response, generate_shap_insight
 
 # ── LOGGING ────────────────────────────────────────────────────────────────────
@@ -92,16 +92,33 @@ async def upload_file(
         raise HTTPException(400, "Only .csv and .json files are supported.")
 
     session_id = new_session_id()
-    file_path = WORKSPACE / f"{session_id}{ext}"
 
-    # Save the uploaded file
+    # Save and parse the uploaded file in memory just to extract metadata
     content = await file.read()
-    file_path.write_bytes(content)
+    import pandas as pd
+    import io
 
-    # Create session record
-    create_session(uid, session_id, file.filename, str(file_path))
+    try:
+        if ext == ".csv":
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_json(io.BytesIO(content))
+        rows, cols = df.shape
+    except Exception as parse_err:
+        logger.warning(f"Could not parse uploaded dataset in-memory: {parse_err}")
+        rows, cols = 0, 0
 
-    logger.info(f"Uploaded '{file.filename}' for user {uid} → session {session_id}")
+    # Create session record (without writing raw file to disk)
+    create_session(uid, session_id, file.filename, "websocket_ephemeral")
+
+    # Pre-fill the upload step status and metadata
+    update_step(uid, session_id, "upload", "done", {
+        "filename": file.filename,
+        "rows": rows,
+        "cols": cols
+    })
+
+    logger.info(f"Initialized stateless session '{session_id}' for '{file.filename}' with metadata: rows={rows}, cols={cols}")
     return {"session_id": session_id, "filename": file.filename}
 
 
@@ -214,8 +231,6 @@ def get_history(
     uid: str = Depends(get_current_user),
 ):
     return get_chat_history(uid, session_id)
-
-
 # ── WEBSOCKET: PIPELINE STREAMING ────────────────────────────────────────────
 @app.websocket("/ws/analysis/{session_id}")
 async def analysis_websocket(
@@ -242,8 +257,44 @@ async def analysis_websocket(
         return
 
     file_path = session.get("file_path")
-    if not file_path or not Path(file_path).exists():
-        await websocket.send_json({"error": "Dataset file not found on server"})
+    temp_file_path = None
+
+    # Wait for the client to send the "start" message
+    try:
+        start_msg = await websocket.receive_json()
+        if not isinstance(start_msg, dict) or start_msg.get("action") != "start":
+            await websocket.send_json({"error": "Expected action 'start'"})
+            await websocket.close(code=1008)
+            return
+
+        if file_path == "websocket_ephemeral":
+            file_content = start_msg.get("file_content")
+            if not file_content:
+                await websocket.send_json({"error": "No file content provided for custom dataset"})
+                await websocket.close(code=1008)
+                return
+
+            import tempfile
+            filename = session.get("filename", "dataset.csv")
+            suffix = Path(filename).suffix.lower() or ".csv"
+            
+            with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, encoding="utf-8") as temp_file:
+                temp_file.write(file_content)
+                temp_file_path = temp_file.name
+            
+            file_path = temp_file_path
+            logger.info(f"Created ephemeral temporary file for analysis: {file_path}")
+        else:
+            # If it's a demo or history run, make sure the local file exists
+            is_demo = file_path and ("workspace/demos" in str(file_path) or "/demos/" in str(file_path))
+            if not is_demo and (not file_path or not Path(file_path).exists()):
+                await websocket.send_json({"error": "Dataset file not found on server"})
+                await websocket.close(code=1011)
+                return
+
+    except Exception as e:
+        logger.error(f"WS initialization error: {e}")
+        await websocket.send_json({"error": f"Failed to initialize analysis: {str(e)}"})
         await websocket.close(code=1011)
         return
 
@@ -257,7 +308,7 @@ async def analysis_websocket(
     def run_pipeline_thread():
         """Runs the AutoML pipeline in a background thread."""
         try:
-            for step_event in run_pipeline(file_path, manual_mode=manual_mode, input_queue=input_queue):
+            for step_event in run_pipeline(file_path, manual_mode=manual_mode, input_queue=input_queue, session_id=session_id):
                 event_queue.put(step_event)
         except Exception as e:
             logger.error(f"Pipeline error for session {session_id}: {e}")
@@ -268,7 +319,7 @@ async def analysis_websocket(
     thread = threading.Thread(target=run_pipeline_thread, daemon=True)
     thread.start()
 
-    # Async task to listen for client messages
+    # Async task to listen for client messages (resumes, etc.)
     async def listen_to_client():
         try:
             while True:
@@ -342,14 +393,25 @@ async def analysis_websocket(
         logger.error(f"WebSocket error for session {session_id}: {e}")
     finally:
         client_listener.cancel()
-        # Delete the dataset file to save space (no longer needed once results are in Firestore)
-        try:
-            p = Path(file_path)
-            if p.exists() and p.is_file():
-                p.unlink()
-                logger.info(f"Cleaned up temporary dataset file: {file_path}")
-        except Exception as cleanup_err:
-            logger.warning(f"Failed to clean up file {file_path}: {cleanup_err}")
+        
+        # EPHEMERAL CLEANUP:
+        # Delete ephemeral temporary file if created
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+                logger.info(f"Cleaned up ephemeral temporary file: {temp_file_path}")
+            except Exception as cleanup_err:
+                logger.warning(f"Failed to clean up temporary file {temp_file_path}: {cleanup_err}")
+                
+        # Backward compatibility cleanup for legacy local file paths (if they exist and are not demos)
+        elif file_path and not ("workspace/demos" in str(file_path) or "/demos/" in str(file_path)):
+            try:
+                p = Path(file_path)
+                if p.exists() and p.is_file():
+                    p.unlink()
+                    logger.info(f"Cleaned up temporary legacy dataset file: {file_path}")
+            except Exception as cleanup_err:
+                logger.warning(f"Failed to clean up file {file_path}: {cleanup_err}")
 
         logger.info(f"WS pipeline completed: session={session_id}")
 
