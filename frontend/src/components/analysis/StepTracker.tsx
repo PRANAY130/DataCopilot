@@ -4,7 +4,7 @@ import React from "react";
 interface Step {
   id: string;
   label: string;
-  status: "pending" | "running" | "done" | "error";
+  status: "pending" | "running" | "done" | "error" | "paused";
   detail?: string;
   duration?: number;
 }
@@ -14,6 +14,7 @@ const STATUS_COLORS: Record<Step["status"], string> = {
   running: "var(--cyan)",
   done: "var(--green)",
   error: "var(--pink)",
+  paused: "var(--amber)",
 };
 
 const STATUS_ICON: Record<Step["status"], React.ReactNode> = {
@@ -25,6 +26,7 @@ const STATUS_ICON: Record<Step["status"], React.ReactNode> = {
     </svg>
   ),
   error: <span style={{ color: "var(--pink)", fontSize: 14 }}>✕</span>,
+  paused: <span style={{ fontFamily: "Fira Code, monospace", fontSize: 10, color: "var(--amber)" }}>⏸</span>,
 };
 
 interface StepTrackerProps {

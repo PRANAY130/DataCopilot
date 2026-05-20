@@ -157,7 +157,7 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
             {pausedStep ? (
               <PausedConfigPanel
                 key={pausedStepId}
-                stepId={pausedStepId}
+                stepId={pausedStepId!}
                 data={pausedStep.data}
                 resumePipeline={resumePipeline}
               />

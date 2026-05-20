@@ -91,7 +91,7 @@ export default function ResultsPage({ params }: { params: Promise<{id:string}>|a
     <main style={{background:"var(--bg-void)",minHeight:"100vh"}} className="cyber-grid-sm">
       <Navbar />
       <div style={{maxWidth:1300,margin:"0 auto",padding:"100px 24px 80px"}}>
-        <div style={{display:"flex",alignItems:"flex-start",justify:"space-between",justifyContent:"space-between",flexWrap:"wrap",gap:16,marginBottom:40}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:16,marginBottom:40}}>
           <div>
             <p className="section-eyebrow" style={{color:"var(--cyan)"}}>// ANALYSIS RESULTS</p>
             <h1 style={{fontFamily:"Orbitron, sans-serif",fontWeight:700,fontSize:"clamp(1.5rem,3vw,2.4rem)",color:"var(--text-bright)",marginBottom:8}}>
