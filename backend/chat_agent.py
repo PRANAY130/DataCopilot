@@ -86,13 +86,16 @@ def get_chat_response(session: dict, user_message: str) -> str:
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key and gemini_key != "your_gemini_api_key_here":
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
-                system_instruction=system_prompt,
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=gemini_key)
+            response = client.models.generate_content(
+                model='gemini-3.5-flash',
+                contents=user_message,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                )
             )
-            response = model.generate_content(user_message)
             return response.text
         except Exception as e:
             logger.warning(f"Gemini API failed: {e}. Trying Groq...")
@@ -104,7 +107,7 @@ def get_chat_response(session: dict, user_message: str) -> str:
             from groq import Groq
             client = Groq(api_key=groq_key)
             completion = client.chat.completions.create(
-                model="llama3-70b-8192",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message},
