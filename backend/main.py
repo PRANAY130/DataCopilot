@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 # ── LOGGING ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
