@@ -66,6 +66,11 @@ export default function UploadZone() {
       setError("Only CSV and JSON files are supported.");
       return;
     }
+    // 5MB limit to prevent OOM on Render free tier
+    if (f.size > 5 * 1024 * 1024) {
+      setError("File exceeds the 5MB limit. Please upload a smaller dataset.");
+      return;
+    }
     setError(null);
     setFile(f);
     setSelectedDemoId(null);
